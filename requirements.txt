@@ -1,0 +1,12 @@
+# MemGrip Dependencies
+ 
+# LLM
+ollama
+ 
+# Memory - Vector Store
+chromadb
+sentence-transformers
+ 
+# Utilities
+python-dotenv
+ 
