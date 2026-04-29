@@ -3,3 +3,4 @@ __pycache__/
 *.pyo
 .env
 __pycache__/
+chroma_db/
