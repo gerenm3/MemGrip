@@ -27,11 +27,17 @@ class ConversationBuffer:
             else:
                 break
 
-    def storage(self):
+    def storage(self) -> list[dict]:
         flushed = list(self.flushed)
         self.flushed.clear()
-        
         return flushed
 
+    def serialize(self) -> str:
+        lines = []
+        for message in self.context:
+            role = "用戶" if message["role"] == "user" else "助理"
+            lines.append(f"{role}：{message['content']}")
+        return "\n".join(lines)
+    
     def get(self):
         return list(self.context)

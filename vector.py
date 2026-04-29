@@ -2,6 +2,7 @@ import config
 import chromadb
 import uuid
 import time
+import json
 
 class ConversationVector:
     def __init__(self):
@@ -14,7 +15,7 @@ class ConversationVector:
             name=config.COLLECTION_RAW_NAME,
             metadata={"hnsw:space": "cosine"}
         )
-    def add(self, summary:str, raw: str, embedding: list) -> None:
+    def add(self, summary:str, raw: list, embedding: list) -> None:
         ids = str(uuid.uuid4())
         time_in = time.time_ns()
         self.summary_collection.add(
@@ -25,11 +26,13 @@ class ConversationVector:
         )
         self.raw_collection.add(
             ids=[ids],
-            documents=[raw],
+            documents=[json.dumps(raw, ensure_ascii=False)],
             metadatas=[{"time": time_in}]
         )
 
     def compare(self, embedding: list) -> float:
+        if self.summary_collection.count() == 0:
+            return 0.0
         result = self.summary_collection.query(
             query_embeddings=embedding,
             n_results=1
@@ -38,9 +41,13 @@ class ConversationVector:
         return (1 - distance) / 2 + 0.5
 
     def search(self, embedding: list, top_k: int) -> list:
+        if self.summary_collection.count() == 0:
+            return []
         result = self.summary_collection.query(
              query_embeddings=embedding,
              n_results=top_k
         )
         result = self.raw_collection.get(ids=result['ids'][0])
         return result["documents"]
+    
+    

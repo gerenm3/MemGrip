@@ -1,23 +1,7 @@
 class ConversationSummary:
     def __init__(self):
         self.summary: str = ""
-        self.temp_cache: list[dict] = ""
-
-    def build_summary_messages(self, prompt: str, flushed: list[dict])-> list[dict]:
-        messages = [{"role": "system", "content": prompt}]
-        turns = []
-        for r in flushed:
-            turns.append(f"{r['role']}: {r['content']}")
-        text = "\n---\n".join(turns)
-        text =  "[OLD SUMMARY]" + self.summary + "[/OLD SUMMARY]" + "[CONVERSATION]" + text + "[/CONVERSATION]"
-        messages.append({"role": "user", "content": text})
-        return messages
-
-    def build_check_messages(self, prompt: str)-> list[dict]:
-        messages = [{"role": "system", "content": prompt}]
-        text =  "[SUMMARY]" + self.summary + "[/SUMMARY]"
-        messages.append({"role": "user", "content": text})
-        return messages
+        self.temp_cache: list[dict] = []
 
     def receive_summary(self, text):
         self.summary = text
