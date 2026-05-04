@@ -5,34 +5,66 @@ import config
 import os
 
 SERVER_REGISTRY = {
-    "file_rw": StdioServerParameters(
-        command="npx",
-        args=["@modelcontextprotocol/server-filesystem", config.FILE_RW_BASE_PATH],
-    ),
-
+    "file_rw": {
+        "params": StdioServerParameters(
+            command="npx",
+            args=["@modelcontextprotocol/server-filesystem", config.FILE_RW_BASE_PATH],
+        ),
+        # 定義此 Server 的「眼睛」：自動感知工具
+        "probe": {
+            "tool": "list_allowed_directories",
+            "args": {} 
+        }
+    }
 }
 
 async def get_tools(server_name: str) -> list:
-    server_params = SERVER_REGISTRY.get(server_name)
+    # 1. 獲取註冊表中的配置字典
+    config_entry = SERVER_REGISTRY.get(server_name)
+    if not config_entry:
+        return []
+    
+    # 2. 從字典中提取實際的 StdioServerParameters
+    server_params = config_entry.get("params")
     if not server_params:
         return []
+
+    # 3. 建立 MCP 連線並獲取工具清單
+    # 注意：保持 errlog 的導向以維持 Console 清潔
     async with stdio_client(server_params, errlog=open(os.devnull, 'w')) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            tools = await session.list_tools()
-            return tools.tools
+            tools_response = await session.list_tools()
+            return tools_response.tools
+
 
 async def call_tool(server_name: str, tool_name: str, tool_args: dict) -> str:
-    server_params = SERVER_REGISTRY.get(server_name)
-    if not server_params:
+    # 1. 獲取註冊表配置
+    config_entry = SERVER_REGISTRY.get(server_name)
+    if not config_entry:
         return f"[Error] 未知的 server：{server_name}"
-    async with stdio_client(server_params, errlog=open(os.devnull, 'w')) as (read, write):
-        async with ClientSession(read, write) as session:
-            await session.initialize()
-            result = await session.call_tool(tool_name, tool_args)
-            return result.content[0].text
+    
+    # 2. 提取連線參數
+    server_params = config_entry.get("params")
+    if not server_params:
+        return f"[Error] Server {server_name} 缺乏啟動參數"
 
-
+    try:
+        # 3. 建立連線並執行
+        async with stdio_client(server_params, errlog=open(os.devnull, 'w')) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                result = await session.call_tool(tool_name, tool_args)
+                
+                # 確保回傳內容存在，避免 content[0] 導致 IndexError
+                if not result.content:
+                    return ""
+                
+                return result.content[0].text
+                
+    except Exception as e:
+        # 這裡的回傳會被 ExecutionManager 捕獲並觸發閉環修正
+        return f"[Error] 執行工具 {tool_name} 時發生異常: {str(e)}"
 
     """
     "web_fetch": StdioServerParameters(
