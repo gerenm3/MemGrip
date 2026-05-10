@@ -7,6 +7,9 @@ ollama
 chromadb
 sentence-transformers
  
+# MCP
+mcp
+
 # Utilities
 python-dotenv
  

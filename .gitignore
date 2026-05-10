@@ -2,5 +2,8 @@ __pycache__/
 *.pyc
 *.pyo
 .env
-__pycache__/
 chroma_db/
+memgrip/
+legacy/
+temp_cache/
+log/
