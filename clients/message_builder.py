@@ -27,15 +27,15 @@ class MessageBuilder:
         rag_context: str = ""
     ) -> List[Dict[str, str]]:
         """交互對話類：注入長期/短期記憶"""
-        system_content = prompt
+        parts = [prompt]
         if summary_text:
-            system_content += f"\n[SUMMARY]{summary_text}[/SUMMARY]"
+            parts.append(f"\n[SUMMARY]{summary_text}[/SUMMARY]")
         if buffer_text:
-            system_content += f"\n[BUFFER]{buffer_text}[/BUFFER]"
+            parts.append(f"\n[BUFFER]{buffer_text}[/BUFFER]")
         if rag_context:
-            system_content += f"\n[RAG]{rag_context}[/RAG]"
+            parts.append(f"\n[RAG]{rag_context}[/RAG]")
         user_input = f"[CURRENT_INPUT]\n{user_input}\n[/CURRENT_INPUT]"
-        return MessageBuilder.build_core(system_content, user_input)
+        return MessageBuilder.build_core("".join(parts), user_input)
 
     @staticmethod
     def build_meta(prompt: str, blocks: Dict[str, str]) -> List[Dict[str, str]]:

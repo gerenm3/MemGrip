@@ -7,3 +7,14 @@ memgrip/
 legacy/
 temp_cache/
 log/
+*.jsonl
+log.txt
+skills/lvs_state.json
+test/
+.gitignore.clinerules/
+skills/results/
+skills/reports/
+skills/*/history/
+skills/*/backup.json
+skills/*/current.json
+core/integrator.py

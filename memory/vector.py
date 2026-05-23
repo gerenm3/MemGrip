@@ -4,8 +4,9 @@ import uuid
 import time
 import json
 
+
 class ConversationVector:
-    def __init__(self):
+    def __init__(self) -> None:
         self.client = chromadb.PersistentClient(path=config.CHROMA_DB_PATH)
         self.summary_collection = self.client.get_or_create_collection(
             name=config.COLLECTION_SUMMARY_NAME,
@@ -15,13 +16,14 @@ class ConversationVector:
             name=config.COLLECTION_RAW_NAME,
             metadata={"hnsw:space": "cosine"}
         )
-    def add(self, summary:str, raw: list, embedding: list) -> None:
+
+    def add(self, summary: str, raw: list, embedding: list) -> None:
         ids = str(uuid.uuid4())
         time_in = time.time_ns()
         self.summary_collection.add(
             ids=[ids],
             documents=[summary],
-            embeddings = embedding,
+            embeddings=embedding,
             metadatas=[{"time": time_in}]
         )
         self.raw_collection.add(
@@ -44,10 +46,8 @@ class ConversationVector:
         if self.summary_collection.count() == 0:
             return []
         result = self.summary_collection.query(
-             query_embeddings=embedding,
-             n_results=top_k
+            query_embeddings=embedding,
+            n_results=top_k
         )
         result = self.raw_collection.get(ids=result['ids'][0])
         return result["documents"]
-    
-    

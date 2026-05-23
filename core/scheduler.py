@@ -16,11 +16,13 @@ def topological_sort(units: List[Unit]) -> List[Unit]:
     unit_map = {u.unit_id: u for u in units}
     in_degree = {u.unit_id: len(u.depends_on) for u in units}
     queue = [uid for uid, deg in in_degree.items() if deg == 0]
-    result = []
+    result_ids: set[str] = set()
+    result: List[Unit] = []
 
     while queue:
         uid = queue.pop(0)
         result.append(unit_map[uid])
+        result_ids.add(uid)
 
         for u in units:
             if uid in u.depends_on:
@@ -30,10 +32,23 @@ def topological_sort(units: List[Unit]) -> List[Unit]:
 
     # 若有循環依賴，回傳剩下的 units
     if len(result) < len(units):
-        remaining = [u for u in units if u not in result]
-        result.extend(remaining)
+        result.extend(u for u in units if u not in result)
 
     return result
+
+
+def _is_terminal(result: UnitResult) -> bool:
+    """檢查 UnitResult 是否已到達終止狀態（FAILED 或 SKIPPED）"""
+    return result.status in (UnitStatus.FAILED, UnitStatus.SKIPPED)
+
+
+def _mark_skipped(results: Dict[str, UnitResult], unit_id: str, failed_id: str) -> None:
+    """將 unit 標記為 SKIPPED"""
+    results[unit_id] = UnitResult(
+        unit_id=unit_id,
+        status=UnitStatus.SKIPPED,
+        error=f"依賴的 Unit {failed_id} 失敗，跳過執行",
+    )
 
 
 def apply_pruning(units: List[Unit], results: Dict[str, UnitResult]) -> Dict[str, UnitResult]:
@@ -48,26 +63,25 @@ def apply_pruning(units: List[Unit], results: Dict[str, UnitResult]) -> Dict[str
     Returns:
         更新後的 results
     """
-    unit_map = {u.unit_id: u for u in units}
-    changed = True
+    # 預先建立 dep_id → 下游 units 的映射
+    downstream_map: dict[str, list[Unit]] = {}
+    for u in units:
+        for dep_id in u.depends_on:
+            downstream_map.setdefault(str(dep_id), []).append(u)
 
-    while changed:
-        changed = False
-        for uid, result in results.items():
-            if result.status != UnitStatus.FAILED:
-                continue
+    # 找出所有已到達終止狀態的 unit
+    terminal_units = [rid for rid, r in results.items() if _is_terminal(r)]
 
-            # 找所有依賴此 failed unit 的下游 units
-            for u in units:
-                if uid in u.depends_on:
-                    other_result = results.get(u.unit_id)
-                    if other_result and other_result.status == UnitStatus.SUCCESS:
-                        # 把 SUCCESS 改成 SKIPPED
-                        results[u.unit_id] = UnitResult(
-                            unit_id=u.unit_id,
-                            status=UnitStatus.SKIPPED,
-                            error=f"依賴的 Unit {uid} 失敗，跳過執行"
-                        )
-                        changed = True
+    # BFS 追蹤連鎖影響
+    to_skip: set[str] = set()
+    queue: list[str] = list(terminal_units)
+    while queue:
+        current_id = queue.pop(0)
+        for downstream in downstream_map.get(current_id, []):
+            did = downstream.unit_id
+            if did not in to_skip and did not in results:
+                to_skip.add(did)
+                _mark_skipped(results, did, current_id)
+                queue.append(did)
 
     return results

@@ -44,8 +44,8 @@ AGENTIC_TEMPERATURE = 0.0
 MAX_TOKENS = 8192
 ROUTE_MAX_TOKENS = 8192
 SUMMARY_MAX_TOKENS = 8192
-DISASSEMBLY_MAX_TOKENS = 8192
-STEP_MAX_TOKENS = 8192
+DISASSEMBLY_MAX_TOKENS = 32768
+STEP_MAX_TOKENS = 16384
 STEP_EXECUTE_MAX_TOKENS = 8192
 INTEGRATION_MAX_TOKENS = 8192
 TOOL_EXECUTION_MAX_TOKENS = 8192
@@ -71,14 +71,24 @@ CHROMA_DB_PATH = "./chroma_db"
 COLLECTION_SUMMARY_NAME = "SUMMARY"
 COLLECTION_RAW_NAME = "RAW"
 TEMP_CACHE_PATH = "./temp_cache"
-TRACE_LOG_PATH = "./log"
+TEMP_CACHE_HIGH_CONFIDENCE = 0.7
+TEMP_CACHE_LOW_CONFIDENCE = 0.3
+TEMP_CACHE_DECAY_LAMBDA = 0.01
+TEMP_CACHE_MAX_TOKENS = 50000
+TEMP_CACHE_MAX_ITEMS = 100
+TEMP_CACHE_IDLE_SECONDS = 900
+TEMP_CACHE_FORCE_TOKENS = 8000
+TEMP_CACHE_TOP_K = 10
+TEMP_CACHE_EVICTION_THRESHOLD = 0.05
+TRACE_LOG_PATH = "trace.jsonl"
+TASK_TRACE_PATH = "task_trace.jsonl"
 
 # --- Tools ---
 ENABLE_WEB_SEARCH = True
 ENABLE_FILE_RW = True
 ENABLE_TASK_MANAGER = True
 FILE_RW_BASE_PATH = "/home/kali/workspace"
-PATTENRS_PATH = "./patterns.json"
+PATTERNS_PATH = "./patterns.json"
 BRAVE_SEARCH_API_KEY = ""
 GOOGLE_SEARCH_API_KEY = ""
 GOOGLE_SEARCH_ENGINE_ID = ""
@@ -91,14 +101,8 @@ TOOL_ENVIRONMENT = {
     "nmap": {"description": "網路掃描"}
 }
 """
-TOOL_ENVIRONMENT = {
-    "file_rw": {
-        "description": f"檔案讀寫，工作目錄：{FILE_RW_BASE_PATH}",
-        "base_path": FILE_RW_BASE_PATH,
-        "instruction": f"請使用絕對路徑，允許目錄：{FILE_RW_BASE_PATH}"
-    }
-}
-AVAILABLE_TOOLS = [f"{k}:{v}" for k, v in TOOL_ENVIRONMENT.items()]
+# TOOL_ENVIRONMENT 與 AVAILABLE_TOOLS 已移除
+# 改為從 clients/mcp_adapters 動態生成
 
 # --- Prompt ---
 SYSTEM_PROMPT = """你是一個智慧助理。整合所有提供的背景資訊，針對用戶的當前輸入給出回答。
@@ -175,21 +179,14 @@ CLARIFY_PROMPT = """你是一個任務描述整理器。請根據用戶輸入、
   "entities": ["操作對象1", "操作對象2"],
   "scope": "範圍",
   "constraints": ["用戶明確提到的限制"],
-  "rules": ["從對話歷史中篩選出的、影響執行邏輯的規則"],
+  "rules": ["從用戶輸入與對話歷史中提取影響執行邏輯的規則"],
   "success_criteria": "怎樣算完成",
   "questions": ["需要進一步澄清的問題（若資訊不足，最多 3 個）"]
 }"""
 
 DISASSEMBLY_PROMPT = """你是一個任務規劃者，負責將任務拆解成可執行的執行單元清單。
----
-## 核心原則
-- 每個執行單元只操作一個對象（一個檔案、一個 API、一組資料）
-- 判斷寫入操作時，只有當任務明確定義覆寫，才可使用並必須在 content 標示「完全覆寫」或「完全取代」；其餘一般的寫入、移動或歸檔動作，一律只能使用「附加」或「合併」。
-- 不得新增任務描述中未要求的動作或資訊需求
-- 任務描述中明確的格式要求、排列順序或輸出結構，必須完整保留在對應單元的 expected_output 中
----
 ## 前置檢查
-若任務缺少可執行所需的關鍵資訊（如路徑、URL、對象範圍），只輸出單一詢問單元：
+若任務缺少可執行所需的關鍵語意資訊（如目標對象不明確、任務意圖模糊），只輸出單一詢問單元：
 [
   {{
     "id": 1,
@@ -201,10 +198,18 @@ DISASSEMBLY_PROMPT = """你是一個任務規劃者，負責將任務拆解成�
     "output_type": "CONTENT"
   }}
 ]
----
+
 ## 可用 MCP Server
 {tools}
----
+
+
+<planning_rules>
+{skill_guide}
+</planning_rules>
+
+規劃階段已完成。現在切換至結構化輸出模式。
+
+<output_schema>
 ## 欄位說明
 content：目標、對象。當引用其他單元的輸出時，必須使用 <unit:id> 標記；不得包含工具名稱。
 expected_input：此單元需要的輸入（語意描述）
@@ -213,11 +218,12 @@ mcp_server：使用的 MCP Server 名稱，從上方列表選取；無需工具�
 depends_on：必須先完成的單元 id 列表
 output_type：INTERNAL、CONTENT 或 ACTION。
   - INTERNAL：輸出只供下游單元使用，不進入最終回覆
-  - CONTENT：任務明確要求將結果直接呈現給用戶，且無後續單元對其進行進一步處理或寫入
-  - ACTION：對外部環境的操作（如寫入檔案、發送請求），執行完成後僅將狀態加入整合，不輸出操作內容本身
----
+  - CONTENT：任務明確要求將結果直接呈現給用戶
+  - ACTION：對外部環境的寫入或發送操作，不包含讀取
+
 ## 輸出
-只輸出 JSON 陣列，不要其他文字。
+必須輸出合法的 JSON 陣列，以 [ 開頭，以 ] 結尾。
+禁止輸出 markdown code block。
 [
   {{
     "id": 1,
@@ -229,22 +235,31 @@ output_type：INTERNAL、CONTENT 或 ACTION。
     "output_type": "INTERNAL"
   }}
 ]
+</output_schema>
 """
 
 STEP_PLAN_PROMPT = """你是一個步驟規劃者，負責將執行單元拆解為具體的執行步驟。
 步驟將由 7B-9B 參數量的模型逐一執行。
+---
+## 可用工具
+嚴格從以下列表選取，不得使用未列出的名稱。
+{tools}
+---
+<planning_rules>
+{skill_guide}
+</planning_rules>
+
+規劃階段已完成。現在切換至結構化輸出模式。
+
+<output_schema>
 ---
 ## 核心原則
 - 寫入操作必須先讀取現有內容再合併寫入；若讀取失敗（檔案不存在）或單元描述明確指示「完全覆寫」或「完全取代」時，才可跳過讀取直接覆寫。
 - 上游單元的輸出將自動注入，可直接使用，不得為取得上游輸出而規劃任何步驟
 - 步驟描述必須忠實反映單元目標，不得改寫、簡化或省略約束條件，也不得新增未要求的動作
 - 每個步驟最多使用一個工具；需要工具的步驟與需要推理的步驟必須分開
-- 每個步驟只做一件事：工具操作或推理，不得在單一步驟中組合多種操作（如同時提取、比對、排序）
+- 每個步驟只做一件事：工具操作或推理，不得在單一步驟中組合多種操作
 - 若工具列表為空，所有步驟均不得使用工具
----
-## 可用工具
-嚴格從以下列表選取，不得使用未列出的名稱。
-{tools}
 ---
 ## 欄位說明
 id：步驟編號
@@ -253,8 +268,9 @@ expected_input：此單元需要的輸入（語意描述）
 expected_output：此單元產出的結果（語意描述）
 tools：使用的工具函數名稱。純推理步驟為 null。
 depends_on：必須先完成的步驟 id 列表
+upstream_depends：此步驟需要引用的上游單元 id 列表（只列出真正需要的）；不需要任何上游資料則填 []
 output_type：INTERNAL 或 GLOBAL。被後續步驟依賴的為 INTERNAL；需要作為此單元最終輸出的步驟為 GLOBAL。至少一個 GLOBAL。
----
+
 ## 輸出
 只輸出 JSON 陣列，不要其他文字。
 [
@@ -265,9 +281,11 @@ output_type：INTERNAL 或 GLOBAL。被後續步驟依賴的為 INTERNAL；需�
     "expected_output": "輸出描述",
     "tools": "tool_function_name 或 null",
     "depends_on": [],
+    "upstream_depends": [],
     "output_type": "INTERNAL"
   }}
 ]
+</output_schema>
 """
 
 STEP_EXECUTE_PROMPT = """完成以下步驟並直接輸出結果。
@@ -302,7 +320,7 @@ INTEGRATION_PROMPT = """你是一個回覆彙整器。將所有執行單元的�
 ## 規則
 - 絕對不得編造、推測或填充原始資料中不存在的資訊
 - CONTENT：直接輸出其 output，不得改寫、省略或重新格式化
-- ACTION：根據 goal 描述的操作內容生成簡潔的自然語言；嚴禁出現「單元」、「unit」、數字 id 或任何系統內部標記
+- ACTION：根據 goal 描述的操作內容報告執行結果，不得生成、推測或描述任何操作結果的內容；嚴禁出現「單元」、「unit」、數字 id 或任何系統內部標記
 - 若只有一個單元，依上述規則處理後輸出
 - 只輸出最終回覆，不要其他文字
 """
@@ -316,6 +334,8 @@ Server 清單: {server_list}
 """
 
 TOOL_EXECUTION_PROMPT = """你是一個任務執行代理。根據用戶需求，調用工具完成任務。
+
+當前工具環境：{environment}
 
 規則：
 1. 修改外部數據前，先讀取確認當前內容
