@@ -18,3 +18,13 @@ skills/*/history/
 skills/*/backup.json
 skills/*/current.json
 core/integrator.py
+skills/l1/*/current.json
+skills/l2/*/current.json
+skills/l1/*/history/
+skills/l2/*/history/
+signal_log.jsonl
+trace.jsonl
+task_trace.jsonl
+storage/
+*.bak
+*.backup_before_opt
