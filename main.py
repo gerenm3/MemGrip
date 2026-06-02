@@ -52,8 +52,8 @@ async def run_task_mode(orchestrator, task: str) -> None:
     rag = ""
 
     # 準備 context
+    buffer = orchestrator.memory.serialize_context()
     context = orchestrator.memory.get_context()
-    buffer = context.get("buffer", "")
     summary = context.get("summary", "")
 
     # 依意圖分流
@@ -105,19 +105,24 @@ async def _init_skills() -> None:
     logger.info("[main] skills initialized")
 
 
-def main() -> None:
-    """主入口點"""
+async def main_async() -> None:
+    """主入口點 (async)"""
     parser = argparse.ArgumentParser(description="MemGrip v2 - AI Task Orchestrator")
     parser.add_argument("--task", type=str, help="執行單一任務後退出")
     args = parser.parse_args()
 
-    asyncio.run(_init_skills())
-    orchestrator = build_orchestrator()
+    await _init_skills()
+    orchestrator = await build_orchestrator()
 
     if args.task:
-        asyncio.run(run_task_mode(orchestrator, args.task))
+        await run_task_mode(orchestrator, args.task)
     else:
-        asyncio.run(orchestrator.run())
+        await orchestrator.run()
+
+
+def main() -> None:
+    """主入口點"""
+    asyncio.run(main_async())
 
 
 if __name__ == "__main__":

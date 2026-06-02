@@ -198,9 +198,8 @@ class Orchestrator:
             rag = await self.memory.retrieve(user_input)
 
         # 準備 context
+        buffer = self.memory.serialize_context()
         context = self.memory.get_context()
-        buffer_list = context.get("context", [])
-        buffer = "\n".join(buffer_list) if isinstance(buffer_list, list) else str(buffer_list)
         summary = context.get("summary", "")
 
         if intent == "simple":
@@ -245,7 +244,7 @@ class Orchestrator:
         summary: str,
         rag: str,
     ) -> str:
-        """Tool 路徑：Clarifier → probe_server → ToolManager → Responder.reply_tool"""
+        """Tool 路徑：Clarifier → _run_tool_pipeline"""
         # 澄清
         clarify_result = await self.clarifier.clarify(user_input, buffer, summary, rag)
         if not clarify_result.success:
@@ -268,6 +267,15 @@ class Orchestrator:
             self._pending_summary = summary
             return "在您開始之前，我需要澄清一些問題：\n" + "\n".join(f"- {q}" for q in questions)
 
+        return await self._run_tool_pipeline(clarify_data, user_input, rag)
+
+    async def _run_tool_pipeline(
+        self,
+        clarify_data: dict,
+        user_input: str,
+        rag: str,
+    ) -> str:
+        """共用 Tool pipeline：probe_server → ToolManager → Responder.reply_tool"""
         goal = clarify_data.get("goal", user_input)
 
         # 探測 server
@@ -281,7 +289,6 @@ class Orchestrator:
 
         # 取得工具清單
         all_tools = self.tool_manager.get_server_tools(server_name)
-        environment = self.tool_manager.tool_environments.get(server_name, "")
 
         # Agentic Loop
         loop_result = await self.tool_manager.run_agentic_loop(
@@ -310,7 +317,7 @@ class Orchestrator:
         rag: str,
         domain: str,
     ) -> str:
-        """Complex 路徑：完整規劃 → 執行 → 驗證 → 整合 → LVS → Optimizer"""
+        """Complex 路徑：Clarifier → _run_complex_pipeline"""
         # 澄清
         clarify_result = await self.clarifier.clarify(user_input, buffer, summary, rag)
         if not clarify_result.success:
@@ -333,8 +340,15 @@ class Orchestrator:
             self._pending_domain = domain
             return "在您開始之前，我需要澄清一些問題：\n" + "\n".join(f"- {q}" for q in questions)
 
-        goal = clarify_data.get("goal", user_input)
+        return await self._run_complex_pipeline(clarify_data, user_input, domain)
 
+    async def _run_complex_pipeline(
+        self,
+        clarify_data: dict,
+        user_input: str,
+        domain: str,
+    ) -> str:
+        """共用 Complex pipeline：Disassembler → StepPlanner → Scheduler → Execute → Integrate → LVS → Optimizer"""
         # 取得 Skill Guide
         skill_guide = self._build_system_prompt(domain)
 
@@ -861,36 +875,7 @@ class Orchestrator:
     ) -> str:
         """恢復 Tool 路徑執行"""
         clarify_data = self._pending_clarify_result
-        goal = clarify_data.get("goal", user_input)
-
-        # 探測 server
-        probe_result = await self.router.probe_server(
-            goal, list(self.tool_manager.server_schemas.keys())
-        )
-        if not probe_result.success:
-            return "無法找到適合的工具。"
-
-        server_name = probe_result.data.get("server", "")
-        if not server_name:
-            return "無法找到適合的工具。"
-
-        # 取得工具清單
-        all_tools = self.tool_manager.get_server_tools(server_name)
-
-        # Agentic Loop
-        loop_result = await self.tool_manager.run_agentic_loop(
-            goal=goal,
-            rag_content=rag,
-            server_name=server_name,
-            all_tools=all_tools,
-        )
-
-        # Responder 回覆
-        reply_result = await self.responder.reply_tool(
-            agentic_loop_output=loop_result.data or "",
-            user_input=user_input,
-        )
-        return reply_result.data or "工具執行完成。"
+        return await self._run_tool_pipeline(clarify_data, user_input, rag)
 
     async def _dispatch_complex_with_clarified(
         self,
@@ -902,152 +887,7 @@ class Orchestrator:
     ) -> str:
         """使用已澄清的資料執行 Complex 路徑"""
         clarify_data = self._pending_clarify_result
-        goal = clarify_data.get("goal", user_input)
-
-        # 取得 Skill Guide
-        skill_guide = self._build_system_prompt(domain)
-        available_servers = list(self.tool_manager.server_schemas.keys())
-
-        # L1: 任務拆解
-        dag_feedback = ""
-        disasm_ok = False
-        units: List[Unit] = []
-
-        for attempt in range(3):
-            disasm_result = await self.disassembler.disassemble(
-                clarify_data,
-                available_servers=available_servers,
-                skill_guide=skill_guide,
-                feedback=dag_feedback,
-            )
-            if not disasm_result.success:
-                return "任務拆解失敗。"
-
-            units = disasm_result.data or []
-            if not units:
-                return "無法拆解任務。"
-
-            dag_result = validate_dag(units)
-            if dag_result.success:
-                disasm_ok = True
-                break
-            else:
-                dag_feedback = dag_result.error or "DAG 驗證失敗"
-
-        if not disasm_ok:
-            return f"任務規劃驗證失敗：{dag_feedback}"
-
-        # L2: 步驟規劃
-        unit_map = {u.unit_id: u for u in units}
-        unit_steps: Dict[str, List[Step]] = {}
-        for unit in units:
-            available_tools = []
-            if unit.mcp_server:
-                available_tools = self.tool_manager.get_server_tools(unit.mcp_server)
-            upstream_units_str = self._build_upstream_units_str(unit, unit_map)
-            plan_result = await self.step_planner.plan_unit(
-                unit=unit,
-                available_tools=available_tools,
-                skill_guide=skill_guide,
-                upstream_units=upstream_units_str,
-            )
-            if plan_result.success:
-                unit_steps[unit.unit_id] = plan_result.data or []
-
-        # Scheduler
-        schedule_result = self.scheduler.schedule(units, unit_steps)
-        if not schedule_result.success:
-            return "任務排程失敗。"
-
-        schedule_data = schedule_result.data
-        execution_order = schedule_data.get("execution_order", [])
-        unit_step_orders = schedule_data.get("unit_step_orders", {})
-        cyclic_units = schedule_data.get("cyclic_units", [])
-
-        for cu in cyclic_units:
-            self._unit_store.save_unit(self._session_id, cu.unit_id, UnitResult(
-                unit_id=cu.unit_id,
-                status=UnitStatus.FAILED,
-                error="循環依賴 detected",
-            ))
-
-        # 執行
-        results: Dict[str, UnitResult] = {}
-        max_replan = getattr(config, 'MAX_REPLAN_ATTEMPTS', 2)
-
-        for unit in execution_order:
-            upstream_failed = False
-            for dep_id in unit.depends_on:
-                dep_result = self._unit_store.get_unit(self._session_id, dep_id)
-                if dep_result and dep_result.status == UnitStatus.FAILED:
-                    upstream_failed = True
-                    break
-
-            if upstream_failed:
-                self._unit_store.save_unit(self._session_id, unit.unit_id, UnitResult(
-                    unit_id=unit.unit_id,
-                    status=UnitStatus.SKIPPED,
-                    error="上游 Unit 失敗",
-                ))
-                continue
-
-            upstream_units_str = self._build_upstream_units_str(unit, unit_map)
-            available_tools = self.tool_manager.get_server_tools(unit.mcp_server) if unit.mcp_server else []
-
-            async def replan_callback(failed_step_info: dict, successful_steps: List[Step]) -> List[Step]:
-                plan_result = await self.step_planner.plan_unit(
-                    unit=unit,
-                    available_tools=available_tools,
-                    successful_steps=successful_steps,
-                    failed_step_info=failed_step_info,
-                    skill_guide=skill_guide,
-                    upstream_units=upstream_units_str,
-                )
-                return plan_result.data if plan_result.success else []
-
-            unit_result = await self._execute_unit(
-                unit=unit,
-                steps=unit_step_orders.get(unit.unit_id, []),
-                max_replan=max_replan,
-                replan_callback=replan_callback,
-            )
-            self._unit_store.save_unit(self._session_id, unit.unit_id, unit_result)
-            results[unit.unit_id] = unit_result
-
-        # 整合回覆
-        all_unit_results = self._unit_store.get_all_units(self._session_id)
-        results_dict = {r.unit_id: r for r in all_unit_results}
-
-        integrate_result = await self.responder.integrate(
-            original_task=clarify_data,
-            results=results_dict,
-            units=units,
-        )
-        reply = integrate_result.data or "任務執行完成。"
-
-        # 記錄 trace
-        tracer.log_task(
-            task_type=domain,
-            user_input=user_input,
-            goal=goal,
-            results=results_dict,
-            units=units,
-            clarifier_constraints=clarify_data.get("constraints", []),
-        )
-
-        # LVS
-        warning, triggered = await self.lvs.process(
-            results=results_dict,
-            session_id=self._session_id,
-            task_type=domain,
-        )
-        if warning:
-            reply = reply + f"\n\n{warning}"
-        if triggered:
-            asyncio.create_task(self._run_optimizer(self._session_id, domain, "l1"))
-            asyncio.create_task(self._run_optimizer(self._session_id, domain, "l2"))
-
-        return reply
+        return await self._run_complex_pipeline(clarify_data, user_input, domain)
 
     async def _handle_clarification_response(self, user_input: str) -> Optional[str]:
         """處理用戶對澄清問題的回答.

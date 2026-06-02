@@ -1,0 +1,77 @@
+{
+  "reasoning_resolution": {
+    "core_concept": "在 L1 層級，推論解析度應採用 step_by_step 模式，將複雜的安全請求拆解為線性、可執行的原子任務單元，避免過度抽象的 chain_of_thought 導致指令模糊，也避免 direct 模式忽略依賴關係。",
+    "prompt_patterns": {
+      "sequential_decomposition": "將請求拆解為 '步驟1: [動作] -> 步驟2: [動作]' 的明確序列",
+      "dependency_mapping": "明確標註任務間的輸入輸出依賴關係，如 '任務B需等待任務A完成後執行'"
+    },
+    "design_principles": [
+      "每個 Unit 必須是單一、不可再分的原子操作",
+      "保持邏輯流暢性，確保前序任務的輸出能作為後序任務的輸入"
+    ],
+    "pitfalls": [
+      "過度細分導致任務碎片化，增加調度開銷",
+      "忽略隱性依賴關係，導致任務並行執行時發生衝突"
+    ]
+  },
+  "constraint_rigidity": {
+    "core_concept": "在 it_security 領域，L1 任務拆解需採用 rule 級別的約束剛性，確保每個拆解出的 Unit 都嚴格符合安全合規標準，同時保留足夠的靈活性以適應不同的技術實現路徑。",
+    "prompt_patterns": {
+      "mandatory_validation": "每個任務單元必須包含 '驗證點'，如 '確認權限後方可執行'",
+      "standardized_output": "定義統一的任務狀態報告格式，如 '{status: success/fail, error_code: string}'"
+    },
+    "design_principles": [
+      "任務定義必須明確禁止任何未經授權的權限提升操作",
+      "輸出格式必須嚴格符合下游系統或監控工具的解析要求"
+    ],
+    "pitfalls": [
+      "約束過於僵化導致無法處理動態環境中的異常情況",
+      "約束描述模糊，導致不同模型實作產生歧義"
+    ]
+  },
+  "information_signal_to_noise_ratio": {
+    "core_concept": "L1 任務拆解需維持 balanced 的資訊信噪比，僅提供執行任務單元所必需的上下文資訊，過濾掉與當前拆解無關的冗餘細節，同時保留足夠的安全策略背景以確保任務正確性。",
+    "prompt_patterns": {
+      "context_filtering": "僅包含與當前任務相關的 IP、端口、協議等關鍵技術參數",
+      "background_anchoring": "簡要說明任務所依據的安全策略名稱或版本，如 '依據 ISO 27001 A.9.2.4'"
+    },
+    "design_principles": [
+      "移除與任務執行無直接關聯的歷史日誌或冗長描述",
+      "保留關鍵的安全策略引用，以確保任務的合規性基礎"
+    ],
+    "pitfalls": [
+      "資訊過少導致任務單元缺乏必要的安全上下文，引發誤判",
+      "資訊過多導致模型注意力分散，忽略核心任務邏輯"
+    ]
+  },
+  "boundary_anchoring": {
+    "core_concept": "L1 任務拆解應以 happy_path 為主，確保常規安全操作（如標準掃描、日誌收集）的任務單元清晰明確，同時預留少量空間處理常見的 edge_cases，如服務暫時不可用或權限不足。",
+    "prompt_patterns": {
+      "standard_flow_definition": "定義 '正常執行路徑' 的任務序列，如 '掃描 -> 分析 -> 報告'",
+      "common_failure_handling": "為常見失敗場景預設 '重試' 或 '跳過' 的任務分支"
+    },
+    "design_principles": [
+      "優先確保常規安全操作的任務單元穩定執行",
+      "為高頻發生的邊緣情況提供簡化的處理任務，避免過度複雜化"
+    ],
+    "pitfalls": [
+      "過度關注極端邊緣案例，導致常規任務單元設計複雜化",
+      "忽略常見失敗場景，導致任務執行中斷且無恢復機制"
+    ]
+  },
+  "uncertainty_handling": {
+    "core_concept": "L1 任務拆解需採用 balanced 的不確定性處置策略，在資訊不足時主動請求澄清或採用預設的安全保守策略，避免過度假設導致安全風險，也避免過度保守影響效率。",
+    "prompt_patterns": {
+      "clarification_request": "當關鍵參數缺失時，生成 '請提供 [缺失參數] 以繼續任務' 的查詢單元",
+      "default_safe_action": "定義資訊不足時的預設行為，如 '若無法確認目標，則標記為 pending_review'"
+    },
+    "design_principles": [
+      "明確定義資訊缺失時的處理流程，避免模型自行假設",
+      "優先選擇對系統影響最小的保守策略，確保安全底線"
+    ],
+    "pitfalls": [
+      "過度保守導致任務大量滯留，影響安全響應速度",
+      "過度激進地假設資訊，導致任務執行錯誤或安全漏洞"
+    ]
+  }
+}

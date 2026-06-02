@@ -1,0 +1,82 @@
+{
+  "reasoning_resolution": {
+    "core_concept": "在 L2 層級，將抽象的安全策略拆解為具體、有序且可執行的技術步驟。重點在於明確的因果鏈與操作順序，確保每個 Step 都有明確的輸入輸出定義。",
+    "prompt_patterns": {
+      "sequential_decomposition": "將單一 Unit 拆解為 Step 1, Step 2...，每個 Step 必須依賴前一步的結果或狀態。",
+      "explicit_dependency_mapping": "明確標註 Step 之間的數據流或狀態依賴關係（例如：Step 2 需要 Step 1 產生的 Token）。"
+    },
+    "design_principles": [
+      "原子性原則：每個 Step 應為單一、不可再分的動作（如 '生成密鑰' 而非 '設置安全'）。",
+      "順序依賴性：嚴格定義執行順序，避免並行衝突或狀態不一致。",
+      "可驗證性：每個 Step 應包含明確的成功/失敗判斷標準。"
+    ],
+    "pitfalls": [
+      "過度抽象：Step 描述仍包含多個子動作，導致執行時歧義。",
+      "循環依賴：Step 之間形成邏輯死鎖，無法順序執行。"
+    ]
+  },
+  "constraint_rigidity": {
+    "core_concept": "在 L2 層級，定義步驟執行的硬性約束與合規邊界，確保安全操作符合最小權限、審計追蹤等核心安全原則，同時保留必要的技術靈活性。",
+    "prompt_patterns": {
+      "hard_constraints_enforcement": "明確列出不可違反的安全規則（如 '禁止明文存儲密碼'、'必須使用 MFA'）。",
+      "compliance_checkpoints": "在關鍵 Step 後插入合規性檢查點（如 '驗證 RBAC 權限'）。"
+    },
+    "design_principles": [
+      "最小權限原則：每個 Step 僅授予完成該步驟所需的最小權限。",
+      "審計可追溯性：每個 Step 必須記錄執行者、時間戳與結果，以滿足合規要求。",
+      "失敗即停止：關鍵安全約束違反時，必須立即終止流程而非繼續。"
+    ],
+    "pitfalls": [
+      "約束衝突：不同 Step 的約束條件相互矛盾，導致無法執行。",
+      "過度約束：過於嚴格的約束導致流程無法在實際環境中落地。"
+    ]
+  },
+  "information_signal_to_noise_ratio": {
+    "core_concept": "在 L2 層級，提供足夠的技術上下文以支持步驟執行，但過濾掉與當前 Unit 無關的宏觀戰略資訊，聚焦於具體的 API、配置參數與錯誤代碼。",
+    "prompt_patterns": {
+      "contextual_technical_details": "僅包含當前 Step 所需的技術細節（如 API endpoint、JSON schema、錯誤碼）。",
+      "irrelevant_info_filtering": "明確排除與當前 Unit 無關的歷史背景或未來規劃資訊。"
+    },
+    "design_principles": [
+      "相關性優先：僅提供與當前 Step 直接相關的技術資訊。",
+      "結構化輸出：使用標準格式（如 JSON、YAML）呈現配置與參數，減少自然語言歧義。",
+      "錯誤驅動上下文：僅在可能出錯時提供詳細的錯誤處理資訊。"
+    ],
+    "pitfalls": [
+      "資訊過載：提供過多無關技術細節，干擾核心邏輯。",
+      "資訊不足：缺少關鍵的 API 參數或配置示例，導致步驟無法執行。"
+    ]
+  },
+  "boundary_anchoring": {
+    "core_concept": "在 L2 層級，以典型成功路徑為主，但明確標註常見失敗場景與邊緣情況的處理方式，確保步驟規劃的魯棒性。",
+    "prompt_patterns": {
+      "happy_path_definition": "清晰定義標準成功流程的每一步。",
+      "common_failure_modes": "列出最常見的 3-5 種失敗情況及其對應的 Step 修正動作。"
+    },
+    "design_principles": [
+      "主路徑優先：80% 的規劃資源用於優化典型成功路徑。",
+      "常見邊緣覆蓋：針對高頻發生的邊緣情況（如網路超時、權限不足）提供明確的 Step 分支。",
+      "明確的邊界條件：定義輸入參數的有效範圍與無效值處理。"
+    ],
+    "pitfalls": [
+      "忽略常見失敗：未考慮高頻發生的邊緣情況，導致流程在實際中斷裂。",
+      "過度複雜化：為極低概率的邊緣情況設計複雜的 Step，增加維護成本。"
+    ]
+  },
+  "uncertainty_handling": {
+    "core_concept": "在 L2 層級，當資訊不足時，採取平衡策略：明確標註假設條件，並提供可選的 fallback 步驟或確認機制，避免盲目執行。",
+    "prompt_patterns": {
+      "assumption_explicitation": "明確列出每個 Step 所依賴的假設條件（如 '假設 API 已部署'）。",
+      "fallback_step_definition": "為不確定性高的 Step 提供備用執行路徑或手動確認步驟。"
+    },
+    "design_principles": [
+      "假設透明化：所有未明確指定的條件必須作為假設列出。",
+      "保守執行：在資訊不足時，優先選擇可逆或可手動修正的步驟。",
+      "確認機制：對高風險或不確定性高的步驟，插入人工確認或自動化驗證步驟。"
+    ],
+    "pitfalls": [
+      "隱含假設：未明確標註假設，導致執行時因環境差異而失敗。",
+      "過度保守：在資訊充足時仍插入不必要的確認步驟，降低效率。"
+    ]
+  }
+}

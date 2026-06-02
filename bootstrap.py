@@ -24,6 +24,7 @@ from memory.manager import MemoryManager
 from memory.vector import ConversationVector
 from memory.summary import ConversationSummary, TempCache
 from memory.summarizer import ConversationSummarizer
+from memory.buffer import ConversationBuffer
 from skills.lvs import LVS
 from skills.skill_manager import SkillManager
 from skills.optimizer import Optimizer
@@ -83,7 +84,7 @@ def _build_call_embedding(ollama) -> callable:
     return call_embedding
 
 
-def build_orchestrator() -> Orchestrator:
+async def build_orchestrator() -> Orchestrator:
     """組裝所有 v2 模組並回傳 Orchestrator 實例.
 
     Returns:
@@ -107,6 +108,7 @@ def build_orchestrator() -> Orchestrator:
     vector = ConversationVector()
     summary = ConversationSummary()
     temp_cache = TempCache()
+    buffer = ConversationBuffer()
 
     # Summarizer（LLM 邏輯）
     summarizer = ConversationSummarizer(call_model, call_embedding)
@@ -121,12 +123,13 @@ def build_orchestrator() -> Orchestrator:
 
     # Core Modules
     router = Router(call_model_func=call_model)
-    clarifier = Clarifier(call_model_func=call_model)
+    clarifier = Clarifier(call_model_func=call_model, buffer=buffer, summary=summary)
     disassembler = Disassembler(call_model_func=call_model)
     step_planner = StepPlanner(call_model_func=call_model)
     scheduler = Scheduler()
     mcp_client = MCPClient()
     tool_manager = ToolManager(mcp_client=mcp_client, call_model_func=call_model)
+    await tool_manager.initialize()
     # Executor 需要 execute_tool_func: (tool_name, tool_args) -> Result
     # 這裡傳入一個 wrapper，因為 ToolManager.execute_tool 需要 server_name
     async def execute_tool(tool_name: str, tool_args: dict):

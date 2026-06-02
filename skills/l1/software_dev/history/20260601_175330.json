@@ -1,0 +1,138 @@
+{
+  "timestamp": "20260601_175330",
+  "diagnosis": {
+    "reasoning_resolution": {
+      "problem": "規劃邏輯缺乏容錯機制與前置條件檢查，導致執行鏈斷裂，顯示推導過程過於簡化且未進行多步驗證。",
+      "direction": "chain_of_thought"
+    },
+    "constraint_rigidity": {
+      "problem": "任務規劃存在嚴重缺陷，未嚴格遵守依賴關係與狀態檢查，導致單元跳過與任務終止。",
+      "direction": "hard_schema"
+    },
+    "signal_noise_ratio": {
+      "problem": "缺乏輸入任務描述與執行歷史，核心上下文資訊不足，無法評估執行結果。",
+      "direction": "minimal"
+    },
+    "boundary_anchoring": {
+      "problem": "規劃未能處理上游失敗後的邊緣狀態（如 Unit 6 被跳過後的後續動作），僅關注正常流程。",
+      "direction": "edge_cases"
+    },
+    "uncertainty_handling": {
+      "problem": "重規劃策略失效且無錯誤恢復機制，面對不確定性時採取了導致任務終止的激進或無效處理。",
+      "direction": "conservative"
+    }
+  },
+  "update": {
+    "modified_dimensions": [
+      "reasoning_resolution",
+      "constraint_rigidity",
+      "signal_noise_ratio",
+      "boundary_anchoring",
+      "uncertainty_handling"
+    ],
+    "updated_skills": {
+      "reasoning_resolution": {
+        "core_concept": "在 software_dev 領域的 L1 任務拆解中，推論解析度需介於 direct 與 step_by_step 之間。對於明確的技術模塊（如 API 定義、數據結構）採用 direct 模式以確保效率；對於邏輯複雜的業務流程（如狀態機轉換、事務處理）則採用 step_by_step 模式，將隱式邏輯顯式化為可執行的原子單元。必須引入前置條件檢查與容錯機制，確保推導過程具備多步驗證能力，避免執行鏈斷裂。",
+        "prompt_patterns": {
+          "direct_extraction": "直接提取實體：'從需求中提取所有涉及的數據模型字段，無需解釋。'",
+          "sequential_decomposition": "順序拆解：'將用戶註冊流程拆解為驗證、創建、通知三個獨立步驟，並標註依賴關係與前置條件。'",
+          "fault_tolerance_check": "容錯檢查：'在每個邏輯步驟後添加狀態驗證點，確保前置條件滿足後方可進入下一步。'"
+        },
+        "design_principles": [
+          "根據任務的確定性選擇解析度：高確定性用 direct，低確定性用 step_by_step",
+          "在 L1 階段必須包含前置條件檢查與狀態驗證，防止執行鏈斷裂",
+          "確保拆解後的 Unit 具備獨立可測試性與明確的輸入輸出邊界",
+          "避免過度冗長的 chain_of_thought，但必須保留關鍵的邏輯驗證節點"
+        ],
+        "pitfalls": [
+          "過度拆解導致單元粒度过細，增加整合成本",
+          "對模糊需求使用 direct 模式，遺漏隱式業務規則",
+          "忽略前置條件檢查，導致下游單元因狀態不一致而失敗"
+        ]
+      },
+      "constraint_rigidity": {
+        "core_concept": "L1 任務拆解需平衡 guideline 的靈活性與 rule 的嚴謹性。對於架構層面的拆解（如微服務邊界）採用 guideline 以保留設計空間；對於數據交互與接口定義採用 rule 或 hard_schema 以確保系統間的可互操作性與類型安全。必須嚴格遵守依賴關係與狀態檢查，禁止跳過任何依賴單元，確保任務執行的完整性。",
+        "prompt_patterns": {
+          "flexible_guidance": "提供架構建議：'建議將支付邏輯獨立為服務，具體技術棧由開發者決定。'",
+          "strict_schema_enforcement": "強制格式約束：'每個任務單元必須包含 input_schema 和 output_schema，字段類型必須符合 JSON Schema 規範。'",
+          "dependency_validation": "依賴驗證：'在執行 Unit B 前，必須確認 Unit A 已成功完成並輸出符合 schema 的結果。'"
+        },
+        "design_principles": [
+          "接口與數據定義必須使用 hard_schema 約束",
+          "業務邏輯拆分可採用 rule 級約束，確保關鍵路徑不被破壞",
+          "嚴格執行依賴檢查，禁止因狀態不明確而跳過單元",
+          "避免在 L1 階段過度限制實現細節，保留 L2/L3 的實現自由度"
+        ],
+        "pitfalls": [
+          "約束過鬆導致拆解單元標準不一，難以自動化執行",
+          "約束過死扼殺技術選型的優化空間，導致架構僵化",
+          "未嚴格檢查依賴狀態，導致單元跳過或任務終止"
+        ]
+      },
+      "signal_noise_ratio": {
+        "core_concept": "在 software_dev 拆解中，資訊信噪比應傾向 balanced 至 rich。L1 階段需要足夠的上下文（如現有 API 定義、數據模型、業務規則、執行歷史）來準確劃分邊界並評估執行結果。必須過濾掉無關的 UI 細節或非核心業務邏輯，確保核心依賴關係清晰可見，並保留足夠的歷史資訊以支持錯誤診斷。",
+        "prompt_patterns": {
+          "context_filtering": "過濾無關資訊：'忽略前端樣式細節，僅關注後端數據流與業務狀態變更。'",
+          "rich_dependency_mapping": "提供豐富上下文：'基於以下數據模型定義、現有服務接口及上次執行日誌，拆解新增訂單功能。'",
+          "history_integration": "歷史整合：'參考 Unit 5 的失敗原因，調整 Unit 6 的輸入參數。'"
+        },
+        "design_principles": [
+          "保留所有影響單元邊界的技術依賴（如 DB 表結構、外部 API）",
+          "剔除與邏輯拆分無關的實現細節（如日誌格式、緩存策略）",
+          "確保每個 Unit 的拆解都有足夠的上下文支撐其獨立性判斷",
+          "保留執行歷史資訊，以便評估當前狀態與後續步驟的關聯性"
+        ],
+        "pitfalls": [
+          "上下文不足導致單元間隱式依賴未被識別",
+          "上下文過多導致模型注意力分散，忽略關鍵邊界條件",
+          "缺乏執行歷史導致無法評估當前狀態，引發重複或衝突任務"
+        ]
+      },
+      "boundary_anchoring": {
+        "core_concept": "L1 任務拆解應以 happy_path 為主體，確保核心業務流程的單元拆解流暢且完整。同時需明確標註 edge_cases 的處理單元（如錯誤回滾、異常狀態），並特別關注上游失敗後的邊緣狀態處理（如 Unit 6 被跳過後的後續動作）。不在 L1 階段展開具體實現，僅定義其作為獨立單元或異常路徑的邊界。",
+        "prompt_patterns": {
+          "happy_path_focus": "核心流程拆解：'拆解用戶成功下單的主流程單元。'",
+          "edge_case_anchoring": "邊緣案例標註：'識別並標註庫存不足時的獨立異常處理單元。'",
+          "failure_recovery_flow": "失敗恢復流程：'若 Unit 5 失敗，定義 Unit 6 的替代路徑或終止條件。'"
+        },
+        "design_principles": [
+          "優先確保 Happy Path 的單元完整性與順序正確性",
+          "明確標註 Edge Cases 為獨立單元或異常分支，但不展開細節",
+          "特別處理上游單元失敗後的狀態一致性與後續動作",
+          "避免在 L1 階段過度關注極端邊緣案例而忽略主流程"
+        ],
+        "pitfalls": [
+          "忽略異常路徑導致拆解後的系統缺乏容錯能力",
+          "過度關注邊緣案例導致主流程拆解碎片化",
+          "未處理上游失敗後的邊緣狀態，導致系統處於不一致狀態"
+        ]
+      },
+      "uncertainty_handling": {
+        "core_concept": "面對不確定性，L1 任務拆解應採取 balanced 策略。對於明確缺失的技術細節，標註為 '待定義' 並推遲至 L2；對於業務邏輯模糊處，提出假設並明確標註，確保拆解單元在假設成立的前提下可執行。必須建立錯誤恢復機制，面對不確定性時避免採取導致任務終止的激進處理，而是採用保守的暫停或澄清策略。",
+        "prompt_patterns": {
+          "assumption_marking": "標註假設：'假設用戶身份已驗證，拆解後續的訂單創建單元。'",
+          "deferred_definition": "延遲定義：'數據同步機制未明確，標註為獨立待定義單元，暫不拆解內部邏輯。'",
+          "error_recovery_plan": "錯誤恢復計劃：'若依賴服務不可用，執行回滾並記錄日誌，而非直接終止任務。'"
+        },
+        "design_principles": [
+          "明確區分 '已知' 與 '假設' 的邊界",
+          "對於技術實現的不確定性，採用延遲定義策略",
+          "對於業務邏輯的不確定性，提出可驗證的假設並標註",
+          "建立保守的錯誤恢復機制，避免任務無故終止"
+        ],
+        "pitfalls": [
+          "過度假設導致後續開發方向偏離真實需求",
+          "過度保守導致拆解無法推進，陷入無限澄清循環",
+          "缺乏錯誤恢復機制，導致不確定性直接引發任務失敗"
+        ]
+      }
+    },
+    "change_summary": {
+      "reasoning_resolution": "增加了前置條件檢查與容錯機制的描述，強調多步驗證以防止執行鏈斷裂；在 prompt_patterns 中增加了 fault_tolerance_check；在 design_principles 中加入了狀態驗證的要求。",
+      "constraint_rigidity": "強調了嚴格遵守依賴關係與狀態檢查，禁止跳過單元；在 prompt_patterns 中增加了 dependency_validation；在 pitfalls 中加入了未檢查依賴導致任務終止的風險。",
+      "signal_noise_ratio": "將上下文定義擴展為包含執行歷史，以支持結果評估；在 prompt_patterns 中增加了 history_integration；在 design_principles 和 pitfalls 中強調了保留歷史資訊的重要性。",
+      "boundary_anchoring": "增加了對上游失敗後邊緣狀態處理的具體指引；在 prompt_patterns 中增加了 failure_recovery_flow；在 pitfalls 中加入了未處理上游失敗導致狀態不一致的風險。",
+      "uncertainty_handling": "將策略調整為更保守的錯誤恢復機制，避免任務終止；在 prompt_patterns 中增加了 error_recovery_plan；在 design_principles 和 pitfalls 中強調了建立恢復機制的重要性。"
+    }
+  }
+}

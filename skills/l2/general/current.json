@@ -1,0 +1,77 @@
+{
+  "reasoning_resolution": {
+    "core_concept": "在 general 領域中，L2 規劃需將抽象意圖轉化為具體動作，採用 step_by_step 解析度以確保邏輯連貫性，避免跳躍式推導導致的執行斷層。",
+    "prompt_patterns": {
+      "decomposition": "將單一 Unit 拆解為順序依賴的原子步驟 (Step 1 -> Step 2 -> Step 3)",
+      "state_tracking": "明確標註每一步的輸入/輸出狀態，確保上下文傳遞無誤"
+    },
+    "design_principles": [
+      "每個 Step 必須具備單一明確的執行目標",
+      "步驟間需具備顯式的依賴關係或狀態檢查點"
+    ],
+    "pitfalls": [
+      "過度簡化導致關鍵邏輯遺漏 (Under-specification)",
+      "過度細分導致冗餘步驟與執行效率低落 (Over-segmentation)"
+    ]
+  },
+  "constraint_rigidity": {
+    "core_concept": "在 general 領域中，平衡靈活性與規範性，採用 rule 級約束以確保輸出結構化且可被下游系統解析，同時保留對非標準輸入的適配能力。",
+    "prompt_patterns": {
+      "structural_enforcement": "強制輸出符合預定義的 JSON Schema 或 DSL 格式",
+      "semantic_guardrails": "定義步驟內容的語義邊界，禁止越權或無關操作"
+    },
+    "design_principles": [
+      "輸出格式必須嚴格符合機器可讀的標準結構",
+      "約束條件應聚焦於執行安全與結果一致性，而非限制創意解法"
+    ],
+    "pitfalls": [
+      "約束過死導致無法處理領域內的變異性輸入",
+      "約束過鬆導致輸出結構混亂，無法被自動化流程解析"
+    ]
+  },
+  "information_signal_to_noise_ratio": {
+    "core_concept": "在 general 領域中，提供 balanced 級別的資訊密度，僅包含規劃步驟所需的關鍵上下文與依賴資訊，過濾無關噪音以維持規劃的精確性。",
+    "prompt_patterns": {
+      "context_filtering": "僅提取與當前 Unit 直接相關的實體、屬性與關係",
+      "noise_reduction": "移除歷史對話中的冗餘情感詞彙或非關鍵敘述"
+    },
+    "design_principles": [
+      "資訊選擇應基於對步驟執行的必要性，而非資訊的豐富度",
+      "保持上下文窗口的高效利用，優先保留高權重實體"
+    ],
+    "pitfalls": [
+      "資訊不足導致步驟規劃缺乏依據 (Under-contextualization)",
+      "資訊過載導致模型注意力分散，忽略關鍵約束 (Context Overload)"
+    ]
+  },
+  "boundary_anchoring": {
+    "core_concept": "在 general 領域中，以 mixed 級別的邊界錨定為主，優先處理典型 Happy Path 以確保基礎成功率，同時預留機制處理常見 Edge Cases 以提升魯棒性。",
+    "prompt_patterns": {
+      "primary_flow_definition": "明確定義標準執行路徑的主幹步驟",
+      "exception_handling": "預設常見異常情況的處理分支或回退機制"
+    },
+    "design_principles": [
+      "主流程應覆蓋 80% 的常見使用場景",
+      "異常處理應聚焦於高頻且影響執行結果的關鍵邊界條件"
+    ],
+    "pitfalls": [
+      "過度關注極端 Edge Cases 導致主流程規劃模糊",
+      "忽略常見邊界條件導致規劃在實際應用中頻繁失敗"
+    ]
+  },
+  "uncertainty_handling": {
+    "core_concept": "在 general 領域中，採用 balanced 級別的不確定性處置，在資訊不足時主動請求澄清或做出合理假設，而非盲目推測或完全停滯。",
+    "prompt_patterns": {
+      "assumption_clarification": "明確列出規劃所基於的關鍵假設",
+      "conditional_branching": "針對不確定參數設計條件判斷分支"
+    },
+    "design_principles": [
+      "不確定性應被轉化為可執行的條件邏輯或驗證步驟",
+      "假設必須是可驗證的，並提供驗證路徑"
+    ],
+    "pitfalls": [
+      "過度保守導致規劃無法推進，陷入死鎖",
+      "過度激進導致基於錯誤假設生成無效步驟序列"
+    ]
+  }
+}

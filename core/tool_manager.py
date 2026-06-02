@@ -1,10 +1,16 @@
 """ToolManager — 工具管理（從 core/orchestrator.py 抽取工具相關方法）"""
 
+import asyncio
 import config
 import json
+import logging
 from typing import Any, List, Optional
 from clients.message_builder import MessageBuilder
 from clients.mcp_adapters import SERVER_REGISTRY, ADAPTER_MAP
+from core.health import log_action
+from models.blueprints import Result
+
+logger = logging.getLogger(__name__)
 
 
 class ToolManager:
@@ -28,7 +34,10 @@ class ToolManager:
         self.tool_environments = {}
         for server_name in SERVER_REGISTRY.keys():
             try:
-                tools = await self.mcp_client.get_tools(server_name)
+                tools_result = await self.mcp_client.get_tools(server_name)
+                if not tools_result.success:
+                    raise RuntimeError(tools_result.error or "get_tools 失敗")
+                tools = tools_result.data
                 processed_schemas: list[dict] = []
                 for tool in tools:
                     schema = self._mcp_tool_to_ollama(tool)
@@ -44,7 +53,13 @@ class ToolManager:
                     env_desc = adapter.get_env_prompt()
                     self.tool_environments[server_name] = env_desc if env_desc else f"Server: {server_name}"
             except Exception as e:
-                print(f"[Warning] 伺服器 {server_name} 工具初始化失敗: {e}")
+                error_msg = f"伺服器 {server_name} 工具初始化失敗: {e}"
+                logger.warning("[tool_manager] %s", error_msg)
+                log_action("tool_manager", "server_init_failed", "DEGRADED", server_name + str(e), "部分工具服務不可用")
+
+    def get_server_tools(self, server_name: str) -> list:
+        """取得指定伺服器的所有工具清單（公開 API）"""
+        return self.server_schemas.get(server_name, [])
 
     def _mcp_tool_to_ollama(self, mcp_tool: Any) -> dict:
         return {
@@ -81,54 +96,63 @@ class ToolManager:
                 return {}
         return {}
 
-    async def _execute_tool(self, tool_name: str, tool_args: dict) -> str:
-        """執行單一工具"""
-        server_name = self.tool_registry.get(tool_name)
-        if not server_name:
-            return f"[Error] 找不到工具 {tool_name} 對應的伺服器"
-        return await self.mcp_client.call_tool(server_name, tool_name, tool_args)
-
-    async def execute_tool(self, tool_name: str, tool_args: dict) -> str:
+    async def execute_tool(self, server_name: str, tool_name: str, tool_args: dict) -> Result:
         """公開工具執行方法（供 Executor 呼叫）"""
-        return await self._execute_tool(tool_name, tool_args)
+        try:
+            result = await self.mcp_client.call_tool(server_name, tool_name, tool_args)
+            log_action("tool_manager", "tool_success", "OK", tool_name)
+            return Result(success=True, data=result)
+        except asyncio.TimeoutError as e:
+            log_action("tool_manager", "tool_timeout", "DEGRADED", tool_name + str(e), "工具執行超時")
+            return Result(success=False, error=f"工具執行超時: {e}")
+        except Exception as e:
+            logger.error("[tool_manager] 工具執行失敗: %s", e, exc_info=True)
+            return Result(success=False, error=str(e))
 
-    async def run_agentic_loop(self, goal: str, rag_content: str, all_tools: list, max_iterations: int = 15, environment: str = "") -> str:
+    async def run_agentic_loop(self, goal: str, rag_content: str, all_tools: list, max_iterations: int = 15, environment: str = "") -> Result:
         """Agentic Loop：迭代呼叫模型直到沒有工具調用或達到上限"""
-        system_prompt = config.TOOL_EXECUTION_PROMPT.format(
-            tools=json.dumps(all_tools, ensure_ascii=False, indent=2),
-            environment=environment or ""
-        )
-        context_parts = [f"[USER_INPUT]{goal}[/USER_INPUT]"]
-        if rag_content:
-            context_parts.append(f"[RAG]{rag_content}[/RAG]")
-        context = "\n".join(context_parts)
-
-        conversation: list[dict] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": context}
-        ]
-
-        for _ in range(max_iterations):
-            content, tool_calls = await self._call_llm(
-                config.MEDIUM_MODEL_NAME, conversation, tools=all_tools, caller="tool_loop"
+        try:
+            system_prompt = config.TOOL_EXECUTION_PROMPT.format(
+                tools=json.dumps(all_tools, ensure_ascii=False, indent=2),
+                environment=environment or ""
             )
+            context_parts = [f"[USER_INPUT]{goal}[/USER_INPUT]"]
+            if rag_content:
+                context_parts.append(f"[RAG]{rag_content}[/RAG]")
+            context = "\n".join(context_parts)
 
-            if tool_calls:
-                assistant_msg, valid_calls = self._build_assistant_msg(content, tool_calls)
-                conversation.append(assistant_msg)
+            conversation: list[dict] = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": context}
+            ]
 
-                for tc in valid_calls:
-                    tool_result = await self._execute_single_tool(tc)
-                    conversation.append({
-                        "role": "tool",
-                        "content": str(tool_result),
-                        "tool_name": tc["name"],
-                    })
-                continue
+            for i in range(max_iterations):
+                content, tool_calls = await self._call_llm(
+                    config.MEDIUM_MODEL_NAME, conversation, tools=all_tools, caller="tool_loop"
+                )
 
-            return await self._generate_final_reply(goal, conversation)
+                if tool_calls:
+                    assistant_msg, valid_calls = self._build_assistant_msg(content, tool_calls)
+                    conversation.append(assistant_msg)
 
-        return "工具調用次數已達上限。"
+                    for tc in valid_calls:
+                        tool_result = await self._execute_single_tool(tc)
+                        conversation.append({
+                            "role": "tool",
+                            "content": str(tool_result),
+                            "tool_name": tc["name"],
+                        })
+                    continue
+
+                final_reply = await self._generate_final_reply(goal, conversation)
+                log_action("tool_manager", "agentic_loop_complete", "OK", goal)
+                return Result(success=True, data=final_reply)
+
+            log_action("tool_manager", "tool_call_limit", "DEGRADED", "max_iterations exceeded", "工具調用次數已達上限")
+            return Result(success=False, data="工具調用次數已達上限。")
+        except Exception as e:
+            logger.error("[tool_manager] agentic loop 失敗: %s", e, exc_info=True)
+            return Result(success=False, error=str(e))
 
     async def _call_llm(
         self,
@@ -166,7 +190,10 @@ class ToolManager:
         """執行單一工具呼叫"""
         t_name = parsed["name"]
         t_args = self._parse_tool_arguments(parsed["arguments"])
-        return await self._execute_tool(t_name, t_args)
+        server_name = self.tool_registry.get(t_name)
+        if not server_name:
+            return f"[Error] 找不到工具 {t_name} 對應的伺服器"
+        return await self.mcp_client.call_tool(server_name, t_name, t_args)
 
     async def _generate_final_reply(self, goal: str, conversation: list[dict]) -> str:
         """生成最終回覆"""
