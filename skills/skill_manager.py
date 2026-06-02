@@ -1,137 +1,142 @@
-# skill_manager.py
+"""v2 skill_manager — Skill 管理.
+
+依據 §3.12 (SkillManager) 定義：
+- class SkillManager，供 Orchestrator 透過 DI 注入
+- load_skill / save_skill / skill_guide_to_prompt 改為 instance method
+- 保持現有邏輯
+- 符合 v2 logging 規範
+"""
 
 import json
+import logging
 import os
-import shutil
+import threading
 from datetime import datetime
 
-SKILL_BASE_PATH = "/home/kali/memgrip/skills"
-TASK_TYPES = ["global", "general", "software_dev", "it_security"]
+import config as config
 
-def _skill_path(task_type: str) -> str:
-    return os.path.join(SKILL_BASE_PATH, task_type)
+logger = logging.getLogger(__name__)
 
-def _current_skill_file(task_type: str) -> str:
-    return os.path.join(_skill_path(task_type), "current.json")
+_SKILL_LOCK = threading.RLock()
+SKILL_BASE_PATH = config.SKILL_DIR_BASE
+TASK_TYPES = config.TASK_TYPES
 
-def _history_dir(task_type: str) -> str:
-    return os.path.join(_skill_path(task_type), "history")
 
-def init_skill_dirs():
-    """初始化所有任務類型的目錄"""
-    for task_type in TASK_TYPES:
-        os.makedirs(_history_dir(task_type), exist_ok=True)
+class SkillManager:
+    """Skill Guide 管理器."""
 
-def save_skill(task_type: str, skill_data: dict):
-    """儲存當前 skill 指導"""
-    with open(_current_skill_file(task_type), "w", encoding="utf-8") as f:
-        json.dump(skill_data, f, ensure_ascii=False, indent=2)
+    def _level_path(self, level: str) -> str:
+        """回傳 skills/{level}/ 路徑"""
+        return os.path.join(SKILL_BASE_PATH, level)
 
-def load_skill(task_type: str) -> dict:
-    """載入當前 skill 指導，不存在則從 global 複製"""
-    current_file = _current_skill_file(task_type)
-    
-    if not os.path.exists(current_file):
-        # 從 global 複製作為起點
-        global_file = _current_skill_file("global")
-        if os.path.exists(global_file):
-            shutil.copy(global_file, current_file)
+    def _skill_path(self, task_type: str, level: str = "global") -> str:
+        """回傳 skills/{level}/{task_type}/ 路徑"""
+        return os.path.join(self._level_path(level), task_type)
+
+    def _current_skill_file(self, task_type: str, level: str = "global") -> str:
+        return os.path.join(self._skill_path(task_type, level), "current.json")
+
+    def _history_dir(self, task_type: str, level: str = "global") -> str:
+        return os.path.join(self._skill_path(task_type, level), "history")
+
+    def init_skill_dirs(self, task_type: str = "global", level: str = "global"):
+        """初始化 skills/{level}/{task_type}/ 及 history 目錄."""
+        if task_type == "global":
+            base = self._level_path(level)
         else:
+            base = self._skill_path(task_type, level)
+        os.makedirs(base, exist_ok=True)
+        os.makedirs(self._history_dir(task_type, level), exist_ok=True)
+
+    def save_skill(self, task_type: str, skill_data: dict, level: str = "l1") -> None:
+        """儲存當前 skill 指導"""
+        fpath = self._current_skill_file(task_type, level)
+        os.makedirs(os.path.dirname(fpath), exist_ok=True)
+        with _SKILL_LOCK:
+            with open(fpath, "w", encoding="utf-8") as f:
+                json.dump(skill_data, f, ensure_ascii=False, indent=2)
+
+    def load_skill(self, task_type: str, level: str = "l1") -> dict:
+        """載入當前 skill 指導."""
+        current_file = self._current_skill_file(task_type, level)
+        if not os.path.exists(current_file):
+            global_file = self._current_skill_file("global", level)
+            if os.path.exists(global_file):
+                with _SKILL_LOCK:
+                    with open(global_file, "r", encoding="utf-8") as gf:
+                        content = gf.read()
+                    with open(current_file, "w", encoding="utf-8") as cf:
+                        json.dump(json.loads(content), cf, ensure_ascii=False, indent=2)
+                return json.loads(content)
             return {}
-    
-    with open(current_file, "r", encoding="utf-8") as f:
-        return json.load(f)
+        with _SKILL_LOCK:
+            with open(current_file, "r", encoding="utf-8") as f:
+                return json.load(f)
 
-def save_history(task_type: str, diagnosis: dict, update: dict):
-    """儲存修改歷史"""
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    history_file = os.path.join(
-        _history_dir(task_type), 
-        f"{timestamp}.json"
-    )
-    record = {
-        "timestamp": timestamp,
-        "diagnosis": diagnosis,
-        "update": update
-    }
-    with open(history_file, "w", encoding="utf-8") as f:
-        json.dump(record, f, ensure_ascii=False, indent=2)
+    def save_history(self, task_type: str, diagnosis: dict, update: dict, level: str = "l1") -> str:
+        """儲存修改歷史。回傳 history 檔案路徑."""
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        history_file = os.path.join(self._history_dir(task_type, level), f"{timestamp}.json")
+        record = {
+            "timestamp": timestamp,
+            "diagnosis": diagnosis,
+            "update": update,
+        }
+        with open(history_file, "w", encoding="utf-8") as f:
+            json.dump(record, f, ensure_ascii=False, indent=2)
+        return history_file
 
-def apply_update(task_type: str, updated_skills: dict, diagnosis: dict):
-    """套用診斷結果到 skill 指導並儲存歷史"""
-    current = load_skill(task_type)
-    
-    # 只更新被修改的維度
-    for dimension, content in updated_skills.items():
-        current[dimension] = content
-    
-    save_skill(task_type, current)
-    save_history(task_type, diagnosis, updated_skills)
-    
-    return current
+    def get_version(self, task_type: str, level: str = "l1") -> int:
+        """回傳當前 skill 的版本號，不存在時回傳 0."""
+        current = self.load_skill(task_type, level)
+        return current.get("skill_version", 0) if current else 0
 
+    def apply_update(self, task_type: str, updated_skills: dict, diagnosis: dict, level: str = "l1") -> dict:
+        """套用診斷結果到 skill 指導並儲存歷史。
+        
+        自動遞增 skill_version。
+        """
+        with _SKILL_LOCK:
+            current = self.load_skill(task_type, level)
+            for dimension, content in updated_skills.items():
+                current[dimension] = content
+            # 遞增版本號
+            current["skill_version"] = current.get("skill_version", 0) + 1
+            self.save_skill(task_type, current, level)
+            self.save_history(task_type, diagnosis, updated_skills, level)
+        return current
 
-def skill_guide_to_prompt(skill_guide) -> str:
-    """將 skill_guide（五個維度）或字串轉換為適合注入 prompt 的純文字字串。
+    def skill_guide_to_prompt(self, skill_guide) -> str:
+        """將 skill_guide 轉換為適合注入 prompt 的純文字字串."""
+        if not skill_guide:
+            return ""
+        if isinstance(skill_guide, str):
+            return skill_guide
 
-    每個維度輸出一個段落，格式：
-    [維度名稱]
-    核心概念：{core_concept}
-    可用方向：
-    - {key}：{prompt_patterns[key]}
-    ...
-    設計原則：
-    - {design_principles[0]}
-    - ...
-    注意事項：
-    - {pitfalls[0]}
-    - {pitfalls[1]}
+        segments = []
+        for dimension_name, dimension_data in skill_guide.items():
+            if not dimension_data:
+                continue
+            core_concept = dimension_data.get("core_concept", "")
+            if not core_concept:
+                continue
+            prompt_patterns = dimension_data.get("prompt_patterns", {})
+            design_principles = dimension_data.get("design_principles", [])
+            pitfalls = dimension_data.get("pitfalls", [])[:2]
 
-    不輸出 usage_guidelines 等結構性欄位。
-    """
-    if not skill_guide:
-        return ""
+            lines = [
+                f"[{dimension_name}]",
+                f"核心概念：{core_concept}",
+                "可用方向：",
+            ]
+            for key, value in prompt_patterns.items():
+                lines.append(f"- {key}：{value}")
+            lines.append("設計原則：")
+            for dp in design_principles:
+                lines.append(f"- {dp}")
+            lines.append("注意事項：")
+            for p in pitfalls:
+                lines.append(f"- {p}")
+            segments.append("\n".join(lines))
 
-    # 如果已經是字串，直接返回
-    if isinstance(skill_guide, str):
-        return skill_guide
-
-    segments = []
-    for dimension_name, dimension_data in skill_guide.items():
-        if not dimension_data:
-            continue
-
-        # 核心概念
-        core_concept = dimension_data.get("core_concept", "")
-        if not core_concept:
-            continue
-
-        # 可用方向（prompt_patterns 的所有 key-value）
-        prompt_patterns = dimension_data.get("prompt_patterns", {})
-
-        # 設計原則（全部列舉）
-        design_principles = dimension_data.get("design_principles", [])
-
-        # 注意事項（僅前兩條）
-        pitfalls = dimension_data.get("pitfalls", [])[:2]
-
-        lines = [
-            f"[{dimension_name}]",
-            f"核心概念：{core_concept}",
-            "可用方向：",
-        ]
-
-        for key, value in prompt_patterns.items():
-            lines.append(f"- {key}：{value}")
-
-        lines.append("設計原則：")
-        for dp in design_principles:
-            lines.append(f"- {dp}")
-
-        lines.append("注意事項：")
-        for p in pitfalls:
-            lines.append(f"- {p}")
-
-        segments.append("\n".join(lines))
-
-    return "\n\n".join(segments)
+        return "\n\n".join(segments)

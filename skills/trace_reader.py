@@ -1,21 +1,23 @@
-"""
-trace_reader.py
-從 task_trace.jsonl 和 trace.jsonl 組裝 execution_record。
+"""trace_reader — 從 task_trace.jsonl 和 trace.jsonl 組裝 execution_record.
+
+符合 logging 規範
 """
 
 import json
-from collections import defaultdict
+import logging
 from pathlib import Path
 
-from config import TASK_TRACE_PATH, TRACE_LOG_PATH
+import config
+
+logger = logging.getLogger(__name__)
 
 
-def _load_jsonl(path: str) -> list[dict]:
-    """讀取 JSONL 檔案，回傳所有列的列表。"""
+def _load_jsonl(path: str) -> list:
+    """讀取 JSONL 檔案，回傳所有列的列表."""
     p = Path(path)
     if not p.exists():
         return []
-    results: list[dict] = []
+    results = []
     with p.open("r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
@@ -28,9 +30,9 @@ def _load_jsonl(path: str) -> list[dict]:
     return results
 
 
-def _extract_tool_calls_from_messages(messages: list[dict]) -> list[dict]:
-    """從 messages 中提取 tool_calls（assistant 角色的 tool_calls）。"""
-    tool_calls_list: list[dict] = []
+def _extract_tool_calls_from_messages(messages: list) -> list:
+    """從 messages 中提取 tool_calls."""
+    tool_calls_list = []
     for msg in messages:
         if msg.get("role") == "assistant" and msg.get("tool_calls"):
             for tc in msg["tool_calls"]:
@@ -43,66 +45,11 @@ def _extract_tool_calls_from_messages(messages: list[dict]) -> list[dict]:
     return tool_calls_list
 
 
-def _extract_tool_results_from_messages(messages: list[dict]) -> list[str]:
-    """從 messages 中提取 tool 回傳的結果（role="tool" 的 content）。"""
-    results: list[str] = []
-    for msg in messages:
-        if msg.get("role") == "tool":
-            content = msg.get("content", "")
-            if content:
-                results.append(content)
-    return results
-
-
-def _extract_last_assistant_response(messages: list[dict]) -> str:
-    """從 messages 中提取最後一個 assistant 的 content（非 tool_calls）。"""
-    last_content = ""
-    for msg in messages:
-        if msg.get("role") == "assistant":
-            content = msg.get("content", "")
-            if content:
-                last_content = content
-    return last_content
-
-
 def build_execution_record(session_id: str) -> dict | None:
-    """
-    從 task_trace.jsonl 和 trace.jsonl 組裝 execution_record。
-    回傳格式：
-    {
-      "task_type": "...",
-      "goal": "...",
-      "units": [
-        {
-          "unit_id": "1",
-          "planned_goal": "...",
-          "expected_output": "...",
-          "actual_output": "...",
-          "status": "...",
-          "steps": [
-            {
-              "step_id": "1",
-              "planned_goal": "...",
-              "expected_output": "...",
-              "agentic_loop": [
-                {
-                  "turn": 1,
-                  "tool_called": "tool_name 或 null",
-                  "tool_result": "...",
-                  "output": "..."
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    }
-    """
-    # --- 1. 讀取資料 ---
-    task_records = _load_jsonl(TASK_TRACE_PATH)
-    trace_records = _load_jsonl(TRACE_LOG_PATH)
+    """從 task_trace.jsonl 和 trace.jsonl 組裝 execution_record."""
+    task_records = _load_jsonl(config.TASK_TRACE_PATH)
+    trace_records = _load_jsonl(config.TRACE_LOG_PATH)
 
-    # --- 2. 從 task_trace 找 session_id 對應的記錄 ---
     task_record = None
     for rec in task_records:
         if rec.get("session_id") == session_id:
@@ -116,16 +63,13 @@ def build_execution_record(session_id: str) -> dict | None:
     goal = task_record.get("goal", "")
     task_units = task_record.get("units", [])
 
-    # --- 3. 過濾 trace 中對應 session_id 的記錄 ---
     session_traces = [t for t in trace_records if t.get("session_id") == session_id]
 
-    # --- 4. 依 caller 分組 ---
     planner_l1_list = [t for t in session_traces if t.get("caller") == "planner_l1"]
     planner_l2_list = [t for t in session_traces if t.get("caller") == "planner_l2"]
     executor_list = [t for t in session_traces if t.get("caller") == "executor"]
 
-    # --- 5. 解析 planner_l1 response 取得每個 unit 的 planned_goal 和 expected_output ---
-    unit_planner_info: dict[str, dict] = {}
+    unit_planner_info = {}
     for trace in planner_l1_list:
         resp = trace.get("response", "")
         if not resp:
@@ -142,9 +86,7 @@ def build_execution_record(session_id: str) -> dict | None:
         except json.JSONDecodeError:
             continue
 
-    # --- 6. 解析 planner_l2 response 並用 step count 對應到 unit ---
-    # planner_l2 的 response 每個是一個 unit 的 steps，透過 step count 與 executor 的 step 數對應
-    parsed_l2: list[dict] = []
+    parsed_l2 = []
     for trace in planner_l2_list:
         resp = trace.get("response", "")
         if not resp:
@@ -156,35 +98,25 @@ def build_execution_record(session_id: str) -> dict | None:
         except json.JSONDecodeError:
             continue
 
-    # 依 executor 的 step count 對 parsed_l2 排序（step count 大的排在前面）
-    # 建立 (unit_id, step_count) 對應關係
-    executor_unit_steps: dict[str, int] = {}
+    executor_unit_steps = {}
     for trace in executor_list:
         uid = str(trace.get("unit_id", ""))
         sid = str(trace.get("step_id", ""))
         executor_unit_steps[uid] = max(executor_unit_steps.get(uid, 0), int(sid) if sid.isdigit() else 0)
 
-    # 將 parsed_l2 按 step count 排序，與 task_units 順序對應
-    unit_steps_data: dict[str, list[dict]] = {}
+    unit_steps_data = {}
     if parsed_l2 and executor_unit_steps:
-        # 取得 executor unit_id 並依 step count 排序（大到小）
         sorted_unit_ids = sorted(
             executor_unit_steps.keys(),
             key=lambda x: executor_unit_steps[x],
             reverse=True,
         )
-
-        # 將 parsed_l2 也依 step count 排序（大到小）
         sorted_l2 = sorted(parsed_l2, key=lambda x: len(x), reverse=True)
-
-        # 一一對應
         for i, uid in enumerate(sorted_unit_ids):
             if i < len(sorted_l2):
                 unit_steps_data[uid] = sorted_l2[i]
 
-    # --- 7. 解析 executor 記錄 ---
-    # 依 unit_id + step_id 分組
-    executor_by_step: dict[str, list[dict]] = {}
+    executor_by_step = {}
     for trace in executor_list:
         uid = str(trace.get("unit_id", ""))
         sid = str(trace.get("step_id", ""))
@@ -193,9 +125,7 @@ def build_execution_record(session_id: str) -> dict | None:
             executor_by_step[key] = []
         executor_by_step[key].append(trace)
 
-    # --- 8. 組裝 execution record ---
     units_output = []
-
     for task_unit in task_units:
         unit_id = str(task_unit.get("unit_id", ""))
         status = task_unit.get("status", "unknown")
@@ -203,20 +133,16 @@ def build_execution_record(session_id: str) -> dict | None:
         error = task_unit.get("error", "")
         actual_output = ""
 
-        # planned_goal / expected_output（來自 planner_l1）
         planned_goal = ""
         expected_output = ""
         if unit_id in unit_planner_info:
             planned_goal = unit_planner_info[unit_id].get("planned_goal", "")
             expected_output = unit_planner_info[unit_id].get("expected_output", "")
 
-        # steps
         steps_output = []
         if unit_id in unit_steps_data:
             for step_info in unit_steps_data[unit_id]:
                 step_id = str(step_info.get("id", ""))
-
-                # agentic_loop：從 executor_by_step 取對應的記錄
                 step_key = f"{unit_id}/{step_id}"
                 agentic_loop = []
 
@@ -224,15 +150,11 @@ def build_execution_record(session_id: str) -> dict | None:
                     traces_for_step = executor_by_step[step_key]
                     turn = 1
                     last_response = ""
-
                     for trace in traces_for_step:
-                        # tool_called：若有 tool_calls 取第一個 tool 的 name
                         tool_calls = trace.get("tool_calls", [])
                         tool_called = None
                         if tool_calls and isinstance(tool_calls[0], dict) and tool_calls[0].get("name"):
                             tool_called = tool_calls[0]["name"]
-
-                        # tool_result：從 messages 裡找 role=tool 的 content
                         tool_result = ""
                         for msg in trace.get("messages", []):
                             if msg.get("role") == "tool":
@@ -240,12 +162,9 @@ def build_execution_record(session_id: str) -> dict | None:
                                 if content:
                                     tool_result = content
                                     break
-
-                        # output：直接用 trace["response"]
                         output = trace.get("response", "")
                         if output:
                             last_response = output
-
                         agentic_loop.append({
                             "turn": turn,
                             "tool_called": tool_called,
@@ -253,8 +172,6 @@ def build_execution_record(session_id: str) -> dict | None:
                             "output": output,
                         })
                         turn += 1
-
-                    # actual_output：取該 step 最後一筆 trace 記錄的 response
                     if traces_for_step:
                         actual_output = last_response
 
@@ -276,8 +193,66 @@ def build_execution_record(session_id: str) -> dict | None:
             "steps": steps_output,
         })
 
+    # ── 聚合指標計算 ──
+    unit_count = len(task_units)
+    total_replan = sum(u.get("replan_count", 0) for u in task_units)
+    failed_units = sum(1 for u in task_units if u.get("status") == "FAILED")
+    total_loop = sum(u.get("total_loop_count", 0) for u in task_units)
+    avg_loop_count = total_loop / unit_count if unit_count > 0 else 0
+
+    # constraint 滿足率
+    total_checks = 0
+    satisfied_checks = 0
+    constraint_details = []
+    for u in task_units:
+        checks = u.get("constraint_checks", [])
+        assigned = u.get("assigned_constraints", [])
+        for c in checks:
+            if isinstance(c, dict):
+                total_checks += 1
+                if c.get("satisfied") is True:
+                    satisfied_checks += 1
+                constraint_details.append({
+                    "unit_id": u.get("unit_id", ""),
+                    "constraint": c.get("constraint", ""),
+                    "satisfied": c.get("satisfied", False),
+                })
+
+    constraint_satisfied_ratio = satisfied_checks / total_checks if total_checks > 0 else 1.0
+
+    # verifier_pass_ratio: 從 trace.jsonl 統計 executor_verify 的 passed=true 比例
+    verifier_pass = 0
+    verifier_total = 0
+    for t in session_traces:
+        if t.get("caller") == "executor_verify":
+            verifier_total += 1
+            msgs = t.get("messages", [])
+            for msg in msgs:
+                content = msg.get("content", "")
+                if isinstance(content, str) and '"passed"' in content:
+                    import json as _json
+                    try:
+                        parsed = _json.loads(content) if not isinstance(content, dict) else content
+                        if isinstance(parsed, dict) and parsed.get("passed") is True:
+                            verifier_pass += 1
+                    except (_json.JSONDecodeError, TypeError):
+                        # 嘗試從字串中提取
+                        if '"passed": true' in content or "'passed': true" in content:
+                            verifier_pass += 1
+                    break
+
+    verifier_pass_ratio = verifier_pass / verifier_total if verifier_total > 0 else 1.0
+
     return {
         "task_type": task_type,
         "goal": goal,
         "units": units_output,
+        # 聚合指標
+        "unit_count": unit_count,
+        "replan_count": total_replan,
+        "failed_units": failed_units,
+        "avg_loop_count": avg_loop_count,
+        "constraint_satisfied_ratio": constraint_satisfied_ratio,
+        "verifier_pass_ratio": verifier_pass_ratio,
+        "constraint_details": constraint_details,
     }

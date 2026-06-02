@@ -1,328 +1,231 @@
-# optimizer.py
+"""Signal-driven Optimizer — 3-step LLM flow.
 
-import asyncio
-import ollama
-import json
-import sys
-from pathlib import Path
-
-# 兼容從外部匯入（如 from skills.optimizer import run_optimizer）
-_skill_path = Path(__file__).parent.resolve()
-if str(_skill_path) not in sys.path:
-    sys.path.insert(0, str(_skill_path))
-
-try:
-    from skill_manager import load_skill, apply_update, save_history
-    from trace_reader import build_execution_record
-except ImportError:
-    from .skill_manager import load_skill, apply_update, save_history
-    from .trace_reader import build_execution_record
-
-MODEL = "qwen3.6:35b-a3b"
-
-DIMENSIONS_DEFINITION = """
-五個維度定義：
-
-1. 推論解析度 (Reasoning Resolution)
-   方向範圍：direct → step_by_step → chain_of_thought
-   描述：模型思考的步長，決定推導過程的顯式程度
-
-2. 約束剛性 (Constraint Rigidity)
-   方向範圍：guideline → rule → hard_schema
-   描述：模型的自由度與合規性的平衡
-
-3. 資訊信噪比 (Signal-to-Noise Ratio)
-   方向範圍：minimal → balanced → rich
-   描述：核心上下文與邊緣資訊的比例
-
-4. 邊界錨定 (Boundary Anchoring)
-   方向範圍：happy_path → mixed → edge_cases
-   描述：典型案例與邊緣案例的比例
-
-5. 不確定性處置 (Uncertainty Handling)
-   方向範圍：aggressive → balanced → conservative
-   描述：資訊不足時的行為模式
+依據 §3.12 (Optimizer) 定義：
+- class Optimizer，供 Orchestrator 透過 DI 注入
+- 3-step LLM flow：_analyze_signals → _update_skills → _verify
+- verify 通過才寫入 current.json
+- 不自行觸發，完全由 Orchestrator 控制
+- 使用 logger 記錄，禁止 print()
 """
 
+import json
+import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
-def _parse_json(content: str) -> dict:
-    content = content.strip()
-    if content.startswith("```"):
-        content = content.split("\n", 1)[1]
-        content = content.rsplit("`", 1)[0]
-    return json.loads(content.strip())
+import config
+from clients.model_client import _call_model
+from models.blueprints import Result
+from skills.skill_manager import SkillManager
+
+logger = logging.getLogger(__name__)
+
+# 異常判定閾值
+FAILED_UNITS_THRESHOLD = 0
+REPLAN_COUNT_THRESHOLD = 2
+AVG_LOOP_COUNT_THRESHOLD = 4
+CONSTRAINT_SATISFIED_RATIO_THRESHOLD = 0.7
 
 
-# ──────────────────────────────────────────────
-# 步驟一：意圖對齊檢查
-# ──────────────────────────────────────────────
+class Optimizer:
+    """Signal-driven Optimizer：3-step LLM flow.
 
-async def intent_check(client, execution_record: dict) -> dict:
-    """步驟一：對比任務意圖（goal）與最終實際輸出，判斷是否對齊。
-
-    輸出格式：
-    {
-      "aligned": true/false,
-      "gaps": ["具體哪個 constraint 沒有達到", "..."]
-    }
+    Steps:
+        1. _analyze_signals — 讀取 signal_log.jsonl，統計偏差，映射到五維度
+        2. _update_skills — 根據 dimension_map 最小修改 skill guide
+        3. _verify — 檢查一致性、無矛盾、無極端化
     """
-    goal = execution_record.get("goal", "")
-    units = execution_record.get("units", [])
 
-    # 直接找最後一個有 actual_output 的 unit，不過濾 status
-    final_output = ""
-    for unit in reversed(units):
-        final_output = unit.get("actual_output", "")
-        if final_output:
-            break
+    def __init__(self) -> None:
+        self._skill_manager = SkillManager()
 
-    response = await client.chat(
-        model=MODEL,
-        messages=[{
-            "role": "user",
-            "content": f"""
-你是一個意圖對齊驗證系統。
+    async def run_optimizer(
+        self,
+        session_id: str,
+        task_type: Optional[str] = None,
+        level: str = "l1",
+    ) -> Result:
+        """主入口：依序執行三個步驟，verify 通過才寫入.
 
-請對比以下任務意圖與最終實際輸出，判斷模型是否正確理解了用戶意圖。
+        Args:
+            session_id: 任務 session ID
+            task_type: 任務類型（None 時從 trace 取得）
+            level: 技能層級 "l1" 或 "l2"
 
-任務意圖：
-{goal}
+        Returns:
+            Result(data={"dimension_map": dict, "update_result": dict})
+        """
+        try:
+            logger.info(
+                "[optimizer] start: session=%s, task_type=%s, level=%s",
+                session_id, task_type, level,
+            )
 
-最終實際輸出：
-{final_output}
+            # 若 task_type 為 None，從 signal_log 取得最後一筆的 task_type
+            if task_type is None:
+                task_type = self._get_last_task_type()
+                logger.info("[optimizer] 從 signal_log 取得 task_type=%s", task_type)
 
-請分析：
-1. 最終輸出是否達到了任務意圖的核心目標？
-2. 如果有差距，具體是哪些 constraint 或 success_criteria 沒有達到？
+            # Step 1: 分析信號
+            dimension_map = await self._analyze_signals(task_type, level)
+            if dimension_map is None:
+                return Result(
+                    success=False,
+                    error="analyze_signals 無效輸出",
+                )
 
-只輸出 JSON，不要有任何其他文字：
-{{
-  "aligned": true/false,
-  "gaps": ["具體哪個 constraint 沒有達到", "..."]
-}}
-""".strip()
-        }],
-        think=False,
-        options={"temperature": 0}
-    )
-    return _parse_json(response["message"]["content"])
+            # 載入當前 skill
+            current_skills = self._skill_manager.load_skill(task_type, level)
 
+            # Step 2: 更新 skill
+            update_result = await self._update_skills(
+                dimension_map, current_skills, task_type, level
+            )
+            if update_result is None:
+                return Result(
+                    success=False,
+                    error="update_skills 無效輸出",
+                )
 
-# ──────────────────────────────────────────────
-# 步驟二：規劃品質檢查
-# ──────────────────────────────────────────────
+            # Step 3: 驗證
+            passed = await self._verify(update_result, dimension_map, current_skills)
+            if not passed:
+                logger.warning("[optimizer] verify 未通過，不寫入 skill")
+                return Result(
+                    success=True,
+                    data={
+                        "dimension_map": dimension_map,
+                        "update_result": update_result,
+                        "verified": False,
+                    },
+                )
 
-async def planning_check(client, execution_record: dict) -> dict:
-    """步驟二：分析規劃階段的品質。
+            # 寫入 skill
+            updated = update_result.get("updated_skills", {})
+            self._skill_manager.apply_update(
+                task_type, updated, dimension_map, level,
+            )
+            self._skill_manager.save_history(
+                task_type, dimension_map, update_result, level,
+            )
+            logger.info(
+                "[optimizer] skill updated: task_type=%s, level=%s, dims=%s",
+                task_type, level, list(updated.keys()),
+            )
 
-    輸出格式：
-    {
-      "plan_quality": "整體規劃品質描述",
-      "plan_gaps": ["規劃缺失", "..."],
-      "failed_units": ["失敗的 unit 列表"]
-    }
-    """
-    units = execution_record.get("units", [])
+            return Result(
+                success=True,
+                data={
+                    "dimension_map": dimension_map,
+                    "update_result": update_result,
+                    "verified": True,
+                },
+            )
 
-    units_json = json.dumps(units, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.error("[optimizer] run_optimizer failed: %s", e, exc_info=True)
+            return Result(success=False, error=str(e))
 
-    response = await client.chat(
-        model=MODEL,
-        messages=[{
-            "role": "user",
-            "content": f"""
-你是一個規劃品質分析系統。
+    async def _analyze_signals(
+        self,
+        task_type: str,
+        level: str,
+    ) -> Optional[Dict]:
+        """讀取 signal_log.jsonl，統計各 skill_version 指標偏差，映射到五維度.
 
-請分析以下任務規劃品質：
+        Args:
+            task_type: 任務類型
+            level: 技能層級
 
-{units_json}
+        Returns:
+            dimension_map dict，key 為五維度名稱，value 為 {"problem": str, "direction": str}
+        """
+        signal_path = Path(config.SIGNAL_LOG_PATH)
+        signals: List[Dict] = []
 
-請分析：
-1. 每個 unit 的 planned_goal 是否清晰、可執行？
-2. planned_goal 與 expected_output 是否一致？
-3. 哪些 unit 執行失敗？原因可能為何？
-4. 哪些 unit 的 error 欄位不為空？error 的原因可能為何？
+        if not signal_path.exists():
+            logger.warning("[optimizer] signal_log 不存在: %s", signal_path)
+            return None
 
-只輸出 JSON，不要有任何其他文字：
-{{
-  "plan_quality": "整體規劃品質描述",
-  "plan_gaps": ["規劃缺失", "..."],
-  "failed_units": ["失敗的 unit 列表"]
-}}
-""".strip()
-        }],
-        think=False,
-        options={"temperature": 0}
-    )
-    return _parse_json(response["message"]["content"])
+        with open(signal_path, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    sig = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if sig.get("task_type") == task_type:
+                    signals.append(sig)
 
+        if not signals:
+            logger.info("[optimizer] 無 %s 信號資料", task_type)
+            return None
 
-# ──────────────────────────────────────────────
-# 步驟三：執行品質檢查
-# ──────────────────────────────────────────────
+        # 統計摘要
+        stats = self._compute_stats(signals)
 
-async def execution_check(client, execution_record: dict) -> dict:
-    """步驟三：分析執行階段的品質。
+        # 判斷哪些維度有問題
+        abnormal_dims = self._detect_anomalies(stats)
 
-    輸出格式：
-    {
-      "tool_usage_quality": "工具使用品質描述",
-      "execution_gaps": ["執行落差", "..."],
-      "missing_tools": ["缺失的工具", "..."]
-    }
-    """
-    units = execution_record.get("units", [])
+        if not abnormal_dims:
+            logger.info("[optimizer] 無異常維度，不需要優化")
+            return None
 
-    # 只提取 agentic_loop 內容供 LLM 分析
-    loop_data = []
-    for unit in units:
-        for step in unit.get("steps", []):
-            for turn in step.get("agentic_loop", []):
-                loop_data.append({
-                    "unit_id": unit.get("unit_id"),
-                    "step_id": step.get("step_id"),
-                    "turn": turn.get("turn"),
-                    "tool_called": turn.get("tool_called"),
-                    "tool_result": turn.get("tool_result", "")[:500],  # 截斷避免過長
-                    "output": turn.get("output", "")[:500],
-                })
+        # LLM 映射到五維度
+        dimension_map = await self._llm_map_dimensions(signals, stats, abnormal_dims)
+        return dimension_map
 
-    response = await client.chat(
-        model=MODEL,
-        messages=[{
-            "role": "user",
-            "content": f"""
-你是一個執行品質分析系統。
+    async def _update_skills(
+        self,
+        dimension_map: Dict,
+        current_skills: Dict,
+        task_type: str,
+        level: str,
+    ) -> Optional[Dict]:
+        """根據 dimension_map 對 skill guide 做最小修改.
 
-請分析以下任務執行品質：
+        Args:
+            dimension_map: 維度映射，key 為維度名稱
+            current_skills: 當前 skill guide
+            task_type: 任務類型
+            level: 技能層級
 
-Agentic Loop 記錄：
-{json.dumps(loop_data, ensure_ascii=False, indent=2)}
+        Returns:
+            update_result dict
+        """
+        dimensions_def = config.SKILL_DIMENSIONS
 
-請分析：
-1. 工具呼叫是否正確且充分？
-2. 工具結果是否足以生成最終輸出？
-3. 哪些步驟產生了預期外的落差？
+        # 過濾出有問題的維度
+        problem_dims = {k: v for k, v in dimension_map.items()
+                       if isinstance(v, dict) and v.get("problem")}
 
-只輸出 JSON，不要有任何其他文字：
-{{
-  "tool_usage_quality": "工具使用品質描述",
-  "execution_gaps": ["執行落差", "..."],
-  "missing_tools": ["缺失的工具", "..."]
-}}
-""".strip()
-        }],
-        think=False,
-        options={"temperature": 0}
-    )
-    return _parse_json(response["message"]["content"])
+        if not problem_dims:
+            logger.info("[optimizer] 無問題維度需要更新")
+            return None
 
+        prompt = f"""你是 skill guide 優化系統。
 
-# ──────────────────────────────────────────────
-# 步驟四：映射到五個維度
-# ──────────────────────────────────────────────
+以下是五個維度的定義：
+{json.dumps(dimensions_def, ensure_ascii=False, indent=2)}
 
-async def map_to_dimensions(
-    client,
-    intent_result: dict,
-    planning_result: dict,
-    execution_result: dict,
-) -> dict:
-    """步驟四：綜合前三個階段的診斷，映射到五個維度。
+以下是診斷出的問題維度及方向：
+{json.dumps(problem_dims, ensure_ascii=False, indent=2)}
 
-    輸出格式：
-    {
-      "reasoning_resolution": {"problem": "問題描述", "direction": "調整方向"},
-      "constraint_rigidity": {"problem": "...", "direction": "..."},
-      "signal_noise_ratio": {"problem": "...", "direction": "..."},
-      "boundary_anchoring": {"problem": "...", "direction": "..."},
-      "uncertainty_handling": {"problem": "...", "direction": "..."}
-    }
-    """
-    response = await client.chat(
-        model=MODEL,
-        messages=[{
-            "role": "user",
-            "content": f"""
-你是一個 skill 維度映射系統。
-
-以下是五個評估維度的定義：
-{DIMENSIONS_DEFINITION}
-
-以下是三個階段的診斷結果：
-
-【階段一：意圖對齊】
-{json.dumps(intent_result, ensure_ascii=False, indent=2)}
-
-【階段二：規劃品質】
-{json.dumps(planning_result, ensure_ascii=False, indent=2)}
-
-【階段三：執行品質】
-{json.dumps(execution_result, ensure_ascii=False, indent=2)}
-
-請綜合以上診斷，將問題映射到五個維度。每個維度輸出：
-- problem：這個問題在該維度上代表什麼問題
-- direction：需要往哪個方向調整（例如 direct → step_by_step）
-
-只輸出 JSON，不要有任何其他文字：
-{{
-  "reasoning_resolution": {{"problem": "...", "direction": "..."}},
-  "constraint_rigidity": {{"problem": "...", "direction": "..."}},
-  "signal_noise_ratio": {{"problem": "...", "direction": "..."}},
-  "boundary_anchoring": {{"problem": "...", "direction": "..."}},
-  "uncertainty_handling": {{"problem": "...", "direction": "..."}}
-}}
-""".strip()
-        }],
-        think=False,
-        options={"temperature": 0}
-    )
-    return _parse_json(response["message"]["content"])
-
-
-# ──────────────────────────────────────────────
-# 步驟五：更新 skill
-# ──────────────────────────────────────────────
-
-async def update_skills(client, task_type: str, dimension_map: dict) -> dict:
-    """步驟五：根據五個維度的調整方向，更新 skill 指導。
-
-    輸出格式：
-    {
-      "modified_dimensions": ["被修改的維度"],
-      "updated_skills": {"dimension_name": "更新後的內容"},
-      "change_summary": {"dimension_name": "修改說明"}
-    }
-    """
-    current_skills = load_skill(task_type)
-
-    if task_type == "general":
-        specificity_rule = "所有新增或修改的規則必須是通用原則，適用於所有任務類型。嚴禁包含具體的資料類型、欄位名稱或特定任務名稱；若診斷問題來自特定任務細節，應提煉為通用原則再寫入。"
-    else:
-        specificity_rule = f"規則可以包含 {task_type} 領域的具體指引，但仍應避免過於具體的資料欄位名稱。"
-
-    response = await client.chat(
-        model=MODEL,
-        messages=[{
-            "role": "user",
-            "content": f"""
-你是一個 prompt 優化系統。
-
-以下是五個維度的調整方向：
-{json.dumps(dimension_map, ensure_ascii=False, indent=2)}
-
-以下是目前的 skill 指導文件：
+以下是目前的 skill guide：
 {json.dumps(current_skills, ensure_ascii=False, indent=2)}
 
-請根據五個維度的調整方向，對 skill 指導文件做出最小修改。
+任務類型：{task_type}
+技能層級：{level}
 
-規則：
+請根據診斷結果，對 skill guide 做最小修改：
 - 只修改診斷結果中指出有問題的維度
 - 保留原有結構，只在必要處增加、修改或刪除內容
 - 不要重寫整份文件
-- {specificity_rule}
+- 若 task_type 為 general 或 global，規則必須是通用原則
 
-只輸出 JSON，不要有任何其他文字：
+輸出 JSON：
 {{
   "modified_dimensions": ["被修改的維度"],
   "updated_skills": {{
@@ -331,131 +234,213 @@ async def update_skills(client, task_type: str, dimension_map: dict) -> dict:
   "change_summary": {{
     // 每個維度的修改說明
   }}
-}}
-""".strip()
-        }],
-        think=False,
-        options={"temperature": 0}
-    )
-    return _parse_json(response["message"]["content"])
+}}"""
 
+        result = await _call_model(
+            model=config.LARGE_MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=config.MAX_TOKENS,
+            think=True,
+            caller="optimizer._update_skills",
+        )
 
-# ──────────────────────────────────────────────
-# 步驟六：驗證更新
-# ──────────────────────────────────────────────
+        if not result.success:
+            logger.error("[optimizer] _update_skills LLM failed: %s", result.error)
+            return None
 
-async def verify(client, update_result: dict, dimension_map: dict) -> dict:
-    """步驟六：驗證更新後的 skill 是否能真正解決診斷出的問題。
+        try:
+            return self._extract_json(result.data)
+        except Exception as e:
+            logger.error("[optimizer] _update_skills parse failed: %s", e)
+            return None
 
-    輸出格式：
-    {
-      "passed": true/false,
-      "reason": "驗證理由"
-    }
-    """
-    response = await client.chat(
-        model=MODEL,
-        messages=[{
-            "role": "user",
-            "content": f"""
-你是一個 skill 更新驗證系統。
+    async def _verify(
+        self,
+        update_result: Dict,
+        dimension_map: Dict,
+        current_skills: Dict,
+    ) -> bool:
+        """驗證更新的一致性、無矛盾、無極端化.
 
-以下是需要解決的維度問題：
+        Args:
+            update_result: 更新結果
+            dimension_map: 維度映射
+            current_skills: 原 skill guide
+
+        Returns:
+            True 表示驗證通過
+        """
+        prompt = f"""你是 skill guide 驗證系統。
+
+以下是診斷出的問題維度：
 {json.dumps(dimension_map, ensure_ascii=False, indent=2)}
 
 以下是本次更新內容：
 {json.dumps(update_result.get("updated_skills", {}), ensure_ascii=False, indent=2)}
 
-請逐一檢查五個維度的問題是否被對應的更新妥善處理。
-如果所有維度都被解決則 passed=true，否則 passed=false。
+以下是原 skill guide：
+{json.dumps(current_skills, ensure_ascii=False, indent=2)}
 
-只輸出 JSON，不要有任何其他文字：
+請逐一檢查：
+1. 更新是否真正解決了診斷出的問題？
+2. 更新內容是否與原 skill guide 矛盾？
+3. 是否有極端化的傾向（如過度限制或過度放寬）？
+4. 更新是否保持最小修改原則？
+
+輸出 JSON：
 {{
   "passed": true/false,
   "reason": "驗證理由"
-}}
-""".strip()
-        }],
-        think=False,
-        options={"temperature": 0}
-    )
-    return _parse_json(response["message"]["content"])
+}}"""
 
+        result = await _call_model(
+            model=config.LARGE_MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=config.MAX_TOKENS,
+            think=False,
+            caller="optimizer._verify",
+        )
 
-# ──────────────────────────────────────────────
-# 主流程
-# ──────────────────────────────────────────────
+        if not result.success:
+            logger.error("[optimizer] _verify LLM failed: %s", result.error)
+            return False
 
-async def run_optimizer(session_id: str, task_type: str = None) -> tuple:
-    """完整優化循環：依序執行六個步驟。
+        try:
+            parsed = self._extract_json(result.data)
+            return bool(parsed.get("passed", False))
+        except Exception as e:
+            logger.error("[optimizer] _verify parse failed: %s", e)
+            return False
 
-    verify 失敗時最多重試 2 次（重新跑 update_skills + verify）。
-    只在 verify 通過後才寫入 skill_guide。
-    """
-    # 從 trace 組裝 execution_record
-    execution_record = build_execution_record(session_id)
-    if execution_record is None:
-        return ({"error": f"Session '{session_id}' not found"}, None)
+    # -- 內部輔助方法 --
 
-    # 若 task_type 為 None，從 execution_record 取得
-    if task_type is None:
-        task_type = execution_record.get("task_type", "global")
+    def _get_last_task_type(self) -> str:
+        """從 signal_log.jsonl 取得最後一筆的 task_type."""
+        signal_path = Path(config.SIGNAL_LOG_PATH)
+        if not signal_path.exists():
+            return "general"
+        try:
+            with open(signal_path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+            for line in reversed(lines):
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    sig = json.loads(line)
+                    return sig.get("task_type", "general")
+                except json.JSONDecodeError:
+                    continue
+        except Exception as e:
+            logger.warning("[optimizer] _get_last_task_type failed: %s", e)
+        return "general"
 
-    client = ollama.AsyncClient()
+    def _compute_stats(self, signals: List[Dict]) -> Dict:
+        """計算統計摘要."""
+        n = len(signals)
+        if n == 0:
+            return {}
 
-    # ── 步驟 1-3：並行執行三個檢查 ──
-    print(f"[1/6] 意圖對齊檢查...")
-    print(f"[2/6] 規劃品質檢查...")
-    print(f"[3/6] 執行品質檢查...")
-    intent_result, planning_result, execution_result = await asyncio.gather(
-        intent_check(client, execution_record),
-        planning_check(client, execution_record),
-        execution_check(client, execution_record),
-    )
-    print(f"意圖對齊：{'✓' if intent_result.get('aligned') else '✗'}")
-    if intent_result.get("gaps"):
-        for g in intent_result["gaps"]:
-            print(f"  差距：{g}")
-    print(f"規劃品質：{planning_result.get('plan_quality', 'N/A')}")
-    print(f"執行品質：{execution_result.get('tool_usage_quality', 'N/A')}")
+        return {
+            "count": n,
+            "avg_replan": sum(s.get("replan_count", 0) for s in signals) / n,
+            "avg_failed_units": sum(s.get("failed_units", 0) for s in signals) / n,
+            "avg_loop_count": sum(s.get("avg_loop_count", 0) for s in signals) / n,
+            "avg_constraint_ratio": sum(s.get("constraint_satisfied_ratio", 1.0) for s in signals) / n,
+            "avg_verifier_ratio": sum(s.get("verifier_pass_ratio", 1.0) for s in signals) / n,
+            "avg_unit_count": sum(s.get("unit_count", 0) for s in signals) / n,
+            "latest_version": signals[-1].get("skill_version", 0),
+        }
 
-    # ── 步驟 4：映射到五個維度 ──
-    print(f"[4/6] 映射到五個維度...")
-    dimension_map = await map_to_dimensions(
-        client, intent_result, planning_result, execution_result
-    )
-    print(f"映射結果：")
-    for dim, info in dimension_map.items():
-        print(f"  {dim}: {info.get('direction', 'N/A')}")
+    def _detect_anomalies(self, stats: Dict) -> List[str]:
+        """根據閾值判定異常維度."""
+        anomalies: List[str] = []
 
-    # ── 步驟 5-6：更新 + 驗證（含重試） ──
-    max_retries = 2
-    update_result = None
-    passed = False
+        if stats.get("avg_failed_units", 0) > FAILED_UNITS_THRESHOLD:
+            anomalies.append("failed_units")
+        if stats.get("avg_replan", 0) > REPLAN_COUNT_THRESHOLD:
+            anomalies.append("replan_count")
+        if stats.get("avg_loop_count", 0) > AVG_LOOP_COUNT_THRESHOLD:
+            anomalies.append("avg_loop_count")
+        if stats.get("avg_constraint_ratio", 1.0) < CONSTRAINT_SATISFIED_RATIO_THRESHOLD:
+            anomalies.append("constraint_ratio")
 
-    for attempt in range(max_retries + 1):
-        print(f"\n[5/6] 更新 skill（嘗試 {attempt + 1}/{max_retries + 1}）...")
-        update_result = await update_skills(client, task_type, dimension_map)
-        print(f"修改維度：{update_result.get('modified_dimensions', [])}")
+        return anomalies
 
-        print(f"[6/6] 驗證更新...")
-        verify_result = await verify(client, update_result, dimension_map)
-        passed = verify_result.get("passed", False)
-        print(f"驗證結果：{'✓ 通過' if passed else f'✗ 失敗 — {verify_result.get("reason", "")}'}")
+    async def _llm_map_dimensions(
+        self,
+        signals: List[Dict],
+        stats: Dict,
+        abnormal_dims: List[str],
+    ) -> Optional[Dict]:
+        """用 LLM 將異常映射到五個 skill 維度.
 
-        if passed:
-            break
+        Returns:
+            dimension_map dict
+        """
+        dimensions_def = config.SKILL_DIMENSIONS
 
-        if attempt < max_retries:
-            print("驗證未通過，重新執行 update_skills...")
+        # 提取最近 5 筆異常 signal 作為證據
+        evidence = []
+        for s in signals[-5:]:
+            if (s.get("failed_units", 0) > FAILED_UNITS_THRESHOLD or
+                s.get("replan_count", 0) > REPLAN_COUNT_THRESHOLD or
+                s.get("avg_loop_count", 0) > AVG_LOOP_COUNT_THRESHOLD or
+                s.get("constraint_satisfied_ratio", 1.0) < CONSTRAINT_SATISFIED_RATIO_THRESHOLD):
+                evidence.append(s)
 
-    # ── 結果處理 ──
-    if passed:
-        diagnosis = dimension_map
-        apply_update(task_type, update_result["updated_skills"], diagnosis)
-        save_history(task_type, diagnosis, update_result)
-        print(f"\nSkill 指導已更新並儲存至 skills/{task_type}/")
-        return dimension_map, update_result
-    else:
-        print(f"\n⚠ Skill 指導未更新（驗證未通過，已重試 {max_retries} 次）")
-        return dimension_map, update_result
+        prompt = f"""你是 skill 維度映射系統。
+
+五個維度定義：
+{json.dumps(dimensions_def, ensure_ascii=False, indent=2)}
+
+統計摘要：
+{json.dumps(stats, ensure_ascii=False, indent=2)}
+
+異常維度：{abnormal_dims}
+
+異常 session 證據（最近 5 筆）：
+{json.dumps(evidence, ensure_ascii=False, indent=2)}
+
+請將異常映射到五個 skill 維度。每個維度輸出：
+- problem：問題描述
+- direction：調整方向（如 direct → step_by_step）
+
+只輸出 JSON：
+{{
+  "reasoning_resolution": {{"problem": "...", "direction": "..."}},
+  "constraint_rigidity": {{"problem": "...", "direction": "..."}},
+  "signal_noise_ratio": {{"problem": "...", "direction": "..."}},
+  "boundary_anchoring": {{"problem": "...", "direction": "..."}},
+  "uncertainty_handling": {{"problem": "...", "direction": "..."}}
+}}"""
+
+        result = await _call_model(
+            model=config.LARGE_MODEL_NAME,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0,
+            max_tokens=config.MAX_TOKENS,
+            think=False,
+            caller="optimizer._analyze_signals",
+        )
+
+        if not result.success:
+            logger.error("[optimizer] _analyze_signals LLM failed: %s", result.error)
+            return None
+
+        try:
+            return self._extract_json(result.data)
+        except Exception as e:
+            logger.error("[optimizer] _analyze_signals parse failed: %s", e)
+            return None
+
+    @staticmethod
+    def _extract_json(text: str) -> Any:
+        """從 LLM 輸出提取 JSON."""
+        text = text.strip()
+        if text.startswith("```"):
+            text = text.split("\n", 1)[1]
+            text = text.rsplit("`", 1)[0]
+        return json.loads(text.strip())

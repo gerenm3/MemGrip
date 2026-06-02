@@ -1,7 +1,25 @@
+"""v2 summary — 對話摘要與 TempCache.
+
+依據 §3.13 (Memory Layer) + §5.4 (摘要分流) 定義：
+- ConversationSummary：對話摘要狀態
+- TempCache：具衰減優先級的暫存記憶體
+- 指數衰減：confidence × exp(-λ × age_hours)（§3.13 保留）
+"""
+
+import math
+import time
+import uuid
+from typing import Dict, List
+
+import config as config
+from memory.buffer import estimate_tokens
+
+
 class ConversationSummary:
+    """對話摘要長期儲存。"""
+
     def __init__(self) -> None:
         self.summary: str = ""
-        self.cached_flushed: list[dict] = []
 
     def set_summary(self, text: str) -> None:
         self.summary = text
@@ -9,24 +27,14 @@ class ConversationSummary:
     def get_summary(self) -> str:
         return self.summary
 
-    def add_cache(self, flushed: list) -> None:
-        self.cached_flushed.extend(flushed)
-
-
-import json
-import uuid
-import time
-import math
-import config
-
 
 class TempCache:
     """Uncertain memory staging area with decay-based priority queue"""
 
     def __init__(self) -> None:
-        self.items: dict[str, dict] = {}  # id -> item
+        self.items: Dict[str, Dict] = {}  # id -> item
 
-    def add(self, raw_chunk: list, summary: str,
+    def add(self, raw_chunk: List, summary: str,
             similarity_score: float, importance_score: float) -> str:
         """加入新項目，回傳 item id"""
         confidence = (similarity_score + importance_score) / 2
@@ -39,7 +47,7 @@ class TempCache:
             "similarity_score": similarity_score,
             "importance_score": importance_score,
             "timestamp": time.time(),
-            "token_count": self._estimate_tokens(summary),
+            "token_count": estimate_tokens(summary),
             "importance": importance_score,
         }
 
@@ -61,11 +69,11 @@ class TempCache:
                 break
             del self.items[worst_id]
 
-    def _effective_importance(self, item: dict) -> float:
-        age_hours = (time.time() - item["timestamp"]) / 3600
+    def _effective_importance(self, item: Dict) -> float:
+        age_hours = max(0, (time.time() - item["timestamp"]) / 3600)
         return item["confidence"] * math.exp(-config.TEMP_CACHE_DECAY_LAMBDA * age_hours)
 
-    def get_top_k(self, k: int) -> list[dict]:
+    def get_top_k(self, k: int) -> List[Dict]:
         """取前 k 個最高 effective_importance 的項目（含 decay 更新）"""
         sorted_items = sorted(
             self.items.values(),
@@ -88,6 +96,3 @@ class TempCache:
 
     def clear(self) -> None:
         self.items.clear()
-
-    def _estimate_tokens(self, text: str) -> int:
-        return len(text) // 4

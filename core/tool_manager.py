@@ -17,6 +17,10 @@ class ToolManager:
         self.server_schemas: dict[str, list] = {}
         self.tool_environments: dict[str, str] = {}
 
+    async def initialize(self) -> None:
+        """初始化工具清單（公開 API）"""
+        await self._init_tools()
+
     async def _init_tools(self) -> None:
         """初始化工具清單 + 綁定執行層"""
         self.tool_registry = {}
