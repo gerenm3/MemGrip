@@ -104,7 +104,7 @@ DISASSEMBLY_SYSTEM_PROMPT = """{role}
 ## 規則
 - 若任務缺少可執行所需的關鍵語意資訊，只輸出單一詢問單元
 - content、goal 等自然語言描述欄位禁止使用 <unit:X> 標記，一律用「上游的 XXX」描述依賴關係
-- <unit:X> 標記只允許出現在 depends_on 欄位
+- depends_on 欄位必須填入純數字 id（如 [1, 2]），禁止使用任何標記格式（包括 <unit:X>）
 - content 不得包含工具名稱
 - 寫入操作必須先讀取現有內容再合併寫入；明確指示覆寫時除外"""
 

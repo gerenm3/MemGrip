@@ -7,10 +7,11 @@
 - 符合 v2 logging 規範
 """
 
+import asyncio
 import logging
 from typing import Any
 
-import config as config
+import config
 from clients.message_builder import MessageBuilder
 from core.health import log_action
 from core.json_utils import parse_first_json
@@ -59,14 +60,20 @@ class Verifier:
         messages = MessageBuilder.build_task(prompt, "")
 
         try:
-            result = await self.call_model_func(
-                config.MEDIUM_MODEL_NAME,
-                messages,
-                0.0,
-                1024,
-                False,
-                caller="verifier",
+            result = await asyncio.wait_for(
+                self.call_model_func(
+                    config.MEDIUM_MODEL_NAME,
+                    messages,
+                    0.0,
+                    1024,
+                    False,
+                    caller="verifier",
+                ),
+                timeout=config.LLM_TIMEOUT,
             )
+        except asyncio.TimeoutError:
+            logger.error("[Verifier] LLM call timed out (%ds)", config.LLM_TIMEOUT)
+            return Result(success=False, error=f"驗證服務逾時 ({config.LLM_TIMEOUT}s)")
         except Exception as e:
             logger.error("[Verifier] LLM call failed: %s", e, exc_info=True)
             return Result(success=False, error="驗證服務不可用")
@@ -83,4 +90,4 @@ class Verifier:
                 log_action("verifier", "verify_failed", "DEGRADED",
                            f"{unit.unit_id}: gaps={len(gaps)}", "單元驗證未通過")
             return Result(success=True, data=parsed)
-        return Result(success=True, data={"passed": False, "reason": "驗證輸出格式錯誤"})
+        return Result(success=False, data={"passed": False, "reason": "驗證輸出格式錯誤"})

@@ -17,7 +17,7 @@ import logging
 from enum import Enum
 from typing import Any, Awaitable, Callable, Dict, List, Optional
 
-import config as config
+import config
 import core.tracer as tracer
 from core.health import get_user_warnings, log_action
 from core.prompts import SYSTEM_PROMPT

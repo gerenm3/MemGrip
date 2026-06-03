@@ -11,7 +11,7 @@ import time
 import uuid
 from typing import Dict, List
 
-import config as config
+import config
 from memory.buffer import estimate_tokens
 
 

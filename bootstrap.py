@@ -8,7 +8,6 @@
 
 import logging
 
-import config as config
 from core.orchestrator import Orchestrator
 from core.router import Router
 from core.clarifier import Clarifier

@@ -6,11 +6,12 @@
 - 符合 v2 logging 規範
 """
 
+import asyncio
 import json
 import logging
 from typing import Any, Dict, List, Optional
 
-import config as config
+import config
 from clients.message_builder import MessageBuilder
 from core.health import log_action
 from core.json_utils import parse_all_jsons
@@ -29,7 +30,7 @@ expected_input：此步驟需要的輸入（語意描述）
 expected_output：此步驟產出的結果（語意描述）
 tools：使用的工具函數名稱；純推理步驟為 null
 depends_on：必須先完成的步驟 id 列表
-upstream_depends：從上方 ## 上游單元 中選取此步驟真正需要的 id；不需要則填 []
+upstream_depends：從上方 ## 上游單元 中選取此步驟真正需要的純數字 unit id（如 [1, 2]），禁止使用 "unit:X" 等標記格式；不需要則填 []
 output_type：INTERNAL / GLOBAL。被後續步驟依賴的為 INTERNAL；作為此單元最終輸出的為 GLOBAL。至少一個 GLOBAL。
 [
   {{
@@ -91,14 +92,21 @@ class StepPlanner:
         messages = MessageBuilder.build_task(system_prompt, user_message)
 
         try:
-            result = await self.call_model_func(
-                config.LARGE_MODEL_NAME,
-                messages,
-                config.STEP_TEMPERATURE,
-                config.STEP_MAX_TOKENS,
-                config.STEP_THINK,
-                caller="step_planner",
+            result = await asyncio.wait_for(
+                self.call_model_func(
+                    config.LARGE_MODEL_NAME,
+                    messages,
+                    config.STEP_TEMPERATURE,
+                    config.STEP_MAX_TOKENS,
+                    config.STEP_THINK,
+                    caller="step_planner",
+                ),
+                timeout=config.LLM_TIMEOUT,
             )
+        except asyncio.TimeoutError:
+            logger.error("[StepPlanner] LLM call timed out (%ds)", config.LLM_TIMEOUT)
+            log_action("step_planner", "llm_timeout", "FAILED", f"timeout={config.LLM_TIMEOUT}s", "L2 規劃逾時")
+            return Result(success=False, error=f"LLM 呼叫逾時 ({config.LLM_TIMEOUT}s)")
         except Exception as e:
             logger.error("[StepPlanner] LLM call failed: %s", e, exc_info=True)
             log_action("step_planner", "llm_call_failed", "FAILED", str(e), "L2 規劃失敗")

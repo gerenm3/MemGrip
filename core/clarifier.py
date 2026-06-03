@@ -63,7 +63,6 @@ class Clarifier:
 
         messages = MessageBuilder.build_task(CLARIFY_PROMPT, input_text)
         
-        _CLARIFY_TIMEOUT = 60  # 每次 LLM 呼叫的 timeout（秒）
         max_attempts = 3
         for attempt in range(max_attempts):
             try:
@@ -76,7 +75,7 @@ class Clarifier:
                         False,
                         caller="clarifier",
                     ),
-                    timeout=_CLARIFY_TIMEOUT,
+                    timeout=config.LLM_TIMEOUT,
                 )
                 if not result.success:
                     logger.error("Clarifier LLM call failed: %s", result.error)

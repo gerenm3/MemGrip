@@ -8,11 +8,12 @@
 - 符合 v2 logging 規範
 """
 
+import asyncio
 import json
 import logging
 from typing import Any, Dict, List, Tuple
 
-import config as config
+import config
 from clients.message_builder import MessageBuilder
 from core.health import log_action
 from core.prompts import INTEGRATION_PROMPT
@@ -51,16 +52,23 @@ class Responder:
             messages = MessageBuilder.build_dialog(
                 system_prompt, user_input, summary, buffer, rag
             )
-            result_obj = await self.call_model_func(
-                config.MEDIUM_MODEL_NAME, messages,
-                config.TEMPERATURE, config.MAX_TOKENS, config.THINK,
-                caller="responder"
+            result_obj = await asyncio.wait_for(
+                self.call_model_func(
+                    config.MEDIUM_MODEL_NAME, messages,
+                    config.TEMPERATURE, config.MAX_TOKENS, config.THINK,
+                    caller="responder"
+                ),
+                timeout=config.LLM_TIMEOUT,
             )
             if not result_obj.success:
                 return Result(success=False, error=f"reply_simple LLM 失敗: {result_obj.error}")
             reply = result_obj.data if isinstance(result_obj.data, str) else str(result_obj.data)
             log_action("responder", "reply_simple_complete", "OK")
             return Result(success=True, data=reply)
+        except asyncio.TimeoutError:
+            logger.error("[Responder] reply_simple 逾時 (%ds)", config.LLM_TIMEOUT)
+            log_action("responder", "reply_simple_failed", "FAILED", f"timeout={config.LLM_TIMEOUT}s", "簡單回覆逾時")
+            return Result(success=False, error=f"reply_simple 逾時 ({config.LLM_TIMEOUT}s)")
         except Exception as e:
             logger.error("[Responder] reply_simple 失敗: %s", e, exc_info=True)
             log_action("responder", "reply_simple_failed", "FAILED", str(e), "簡單回覆失敗")
@@ -85,16 +93,23 @@ class Responder:
                 {"role": "user", "content": f"[USER_INPUT]{user_input}[/USER_INPUT]\n[AGENTIC_OUTPUT]{agentic_loop_output}[/AGENTIC_OUTPUT]"},
                 {"role": "system", "content": "請根據 Agentic Loop 的輸出，生成一份自然、完整的回覆給用戶。"},
             ]
-            result_obj = await self.call_model_func(
-                config.MEDIUM_MODEL_NAME, messages,
-                config.TEMPERATURE, config.MAX_TOKENS, config.THINK,
-                caller="responder_tool"
+            result_obj = await asyncio.wait_for(
+                self.call_model_func(
+                    config.MEDIUM_MODEL_NAME, messages,
+                    config.TEMPERATURE, config.MAX_TOKENS, config.THINK,
+                    caller="responder_tool"
+                ),
+                timeout=config.LLM_TIMEOUT,
             )
             if not result_obj.success:
                 return Result(success=False, error=f"reply_tool LLM 失敗: {result_obj.error}")
             reply = result_obj.data if isinstance(result_obj.data, str) else str(result_obj.data)
             log_action("responder", "reply_tool_complete", "OK")
             return Result(success=True, data=reply)
+        except asyncio.TimeoutError:
+            logger.error("[Responder] reply_tool 逾時 (%ds)", config.LLM_TIMEOUT)
+            log_action("responder", "reply_tool_failed", "FAILED", f"timeout={config.LLM_TIMEOUT}s", "工具回覆逾時")
+            return Result(success=False, error=f"reply_tool 逾時 ({config.LLM_TIMEOUT}s)")
         except Exception as e:
             logger.error("[Responder] reply_tool 失敗: %s", e, exc_info=True)
             log_action("responder", "reply_tool_failed", "FAILED", str(e), "工具回覆失敗")

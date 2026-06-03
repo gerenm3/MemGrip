@@ -17,7 +17,7 @@ import re
 import threading
 from typing import Any, List, Optional
 
-import config as config
+import config
 from clients.message_builder import MessageBuilder
 from core.health import log_action
 from core.json_utils import parse_first_json
@@ -110,11 +110,17 @@ class Router:
         """呼叫 LLM 並解析 JSON"""
         messages = MessageBuilder.build_task(prompt, input_text)
         try:
-            result = await self.call_model_func(
-                config.MEDIUM_MODEL_NAME, messages,
-                config.ROUTE_TEMPERATURE, config.ROUTE_MAX_TOKENS, False,
-                caller=caller,
+            result = await asyncio.wait_for(
+                self.call_model_func(
+                    config.MEDIUM_MODEL_NAME, messages,
+                    config.ROUTE_TEMPERATURE, config.ROUTE_MAX_TOKENS, False,
+                    caller=caller,
+                ),
+                timeout=config.LLM_TIMEOUT,
             )
+        except asyncio.TimeoutError:
+            logger.error("[Router._call_llm] LLM 呼叫逾時 (%ds)", config.LLM_TIMEOUT)
+            return Result(success=False, error=f"LLM 呼叫逾時 ({config.LLM_TIMEOUT}s)")
         except Exception as e:
             logger.error("[Router._call_llm] LLM 呼叫失敗: %s", e, exc_info=True)
             return Result(success=False, error=str(e))
@@ -172,12 +178,18 @@ class Router:
             goal
         )
         try:
-            probe_result = await self.call_model_func(
-                config.MEDIUM_MODEL_NAME, probe_messages,
-                config.ROUTE_TEMPERATURE, config.ROUTE_MAX_TOKENS, False,
-                caller="tool_probe"
+            probe_result = await asyncio.wait_for(
+                self.call_model_func(
+                    config.MEDIUM_MODEL_NAME, probe_messages,
+                    config.ROUTE_TEMPERATURE, config.ROUTE_MAX_TOKENS, False,
+                    caller="tool_probe"
+                ),
+                timeout=config.LLM_TIMEOUT,
             )
             probe_content = probe_result.data or ""
+        except asyncio.TimeoutError:
+            log_action("router", "probe_server_llm", "DEGRADED", f"timeout={config.LLM_TIMEOUT}s", "無法自動偵測工具")
+            return Result(success=False, error=f"LLM 呼叫逾時 ({config.LLM_TIMEOUT}s)")
         except Exception as e:
             log_action("router", "probe_server_llm", "DEGRADED", str(e), "無法自動偵測工具")
             return Result(success=False, error=str(e))

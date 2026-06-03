@@ -7,11 +7,12 @@
 - 符合 v2 logging 規範
 """
 
+import asyncio
 import logging
 import re
 from typing import Any, Dict, List, Optional
 
-import config as config
+import config
 from clients.message_builder import MessageBuilder
 from core.health import log_action
 from core.json_utils import parse_first_json
@@ -90,15 +91,22 @@ class Executor:
             loop_count += 1
 
             try:
-                result = await self.call_model_func(
-                    config.MEDIUM_MODEL_NAME,
-                    conversation,
-                    config.STEP_EXECUTE_TEMPERATURE,
-                    config.STEP_EXECUTE_MAX_TOKENS,
-                    config.STEP_EXECUTE_THINK,
-                    tools=tools_arg,
-                    caller="executor",
+                result = await asyncio.wait_for(
+                    self.call_model_func(
+                        config.MEDIUM_MODEL_NAME,
+                        conversation,
+                        config.STEP_EXECUTE_TEMPERATURE,
+                        config.STEP_EXECUTE_MAX_TOKENS,
+                        config.STEP_EXECUTE_THINK,
+                        tools=tools_arg,
+                        caller="executor",
+                    ),
+                    timeout=config.LLM_TIMEOUT,
                 )
+            except asyncio.TimeoutError:
+                logger.error("[Executor] LLM call timed out (%ds)", config.LLM_TIMEOUT)
+                log_action("executor", "step_failed", "FAILED", step.step_id + ": LLM 呼叫逾時", "Step 執行逾時")
+                return Result(success=False, error=f"LLM 呼叫逾時 ({config.LLM_TIMEOUT}s)")
             except Exception as e:
                 logger.error("[Executor] LLM call failed: %s", e, exc_info=True)
                 log_action("executor", "step_failed", "FAILED", step.step_id + ": " + str(e), "Step 執行失敗")
@@ -143,7 +151,7 @@ class Executor:
                     conversation.append(tool_msg)
 
         # 檢查是否達到迭代上限且有工具錯誤
-        if loop_count > max_iterations - 1 and tool_errors:
+        if loop_count >= max_iterations and tool_errors:
             error_parts = []
             if tool_errors:
                 error_parts.append("工具錯誤：" + "; ".join(tool_errors))

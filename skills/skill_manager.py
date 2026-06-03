@@ -13,7 +13,7 @@ import os
 import threading
 from datetime import datetime
 
-import config as config
+import config
 
 logger = logging.getLogger(__name__)
 

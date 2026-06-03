@@ -11,7 +11,6 @@ import argparse
 import asyncio
 import logging
 
-import config as config
 from bootstrap import build_orchestrator
 
 logger = logging.getLogger(__name__)

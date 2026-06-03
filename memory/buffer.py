@@ -8,7 +8,7 @@
 
 from typing import Dict, List
 
-import config as config
+import config
 
 
 def estimate_tokens(text: str) -> int:

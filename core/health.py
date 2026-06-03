@@ -9,17 +9,18 @@
 
 import json
 import logging
+import threading
 import time
 from contextvars import ContextVar
 from pathlib import Path
 from typing import List, Optional
-
-import config as config
+import config
 
 logger = logging.getLogger(__name__)
 
 _session_id_var: ContextVar[Optional[str]] = ContextVar('health_session_id', default=None)
 _pending_warnings: dict[Optional[str], List[str]] = {}
+_pending_warnings_lock = threading.Lock()
 
 
 def set_session_id(session_id: Optional[str]) -> None:
@@ -60,9 +61,11 @@ def log_action(module: str, action: str, status: str, detail: str = "", user_mes
         print(f"[{module}] {action} | {status} | {detail or ''}")
 
     if status in ("DEGRADED", "FAILED") and user_message:
-        _pending_warnings.setdefault(_session_id_var.get(), []).append(user_message)
+        with _pending_warnings_lock:
+            _pending_warnings.setdefault(_session_id_var.get(), []).append(user_message)
 
 
 def get_user_warnings(session_id: Optional[str]) -> List[str]:
     """取得並清除指定 session 的待通知警告。"""
-    return _pending_warnings.pop(session_id, [])
+    with _pending_warnings_lock:
+        return _pending_warnings.pop(session_id, [])

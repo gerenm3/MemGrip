@@ -7,12 +7,13 @@
 - 符合 v2 logging 規範
 """
 
+import asyncio
 import json
 import logging
 import re
 from typing import Any, List
 
-import config as config
+import config
 from clients.message_builder import MessageBuilder
 from core.health import log_action
 from core.json_utils import parse_first_json
@@ -49,7 +50,7 @@ content：目標、對象；不得包含工具名稱；引用其他單元輸出�
 expected_input：此單元需要的輸入（語意描述）
 expected_output：此單元產出的結果（語意描述）
 mcp_server：使用的 MCP Server 名稱；無需工具則為 null
-depends_on：必須先完成的單元 id 列表
+depends_on：必須先完成的單元 id 列表（純數字，如 [1, 2]，禁止使用 <unit:X> 等標記格式）
 output_type：INTERNAL / CONTENT / ACTION
   - INTERNAL：輸出只供下游單元使用
   - CONTENT：任務明確要求將結果直接呈現給用戶
@@ -122,14 +123,21 @@ class Disassembler:
         messages = MessageBuilder.build_task(system_prompt, user_message)
 
         try:
-            result = await self.call_model_func(
-                config.LARGE_MODEL_NAME,
-                messages,
-                config.DISASSEMBLY_TEMPERATURE,
-                config.DISASSEMBLY_MAX_TOKENS,
-                config.DISASSEMBLY_THINK,
-                caller="disassembler",
+            result = await asyncio.wait_for(
+                self.call_model_func(
+                    config.LARGE_MODEL_NAME,
+                    messages,
+                    config.DISASSEMBLY_TEMPERATURE,
+                    config.DISASSEMBLY_MAX_TOKENS,
+                    config.DISASSEMBLY_THINK,
+                    caller="disassembler",
+                ),
+                timeout=config.LLM_TIMEOUT,
             )
+        except asyncio.TimeoutError:
+            logger.error("[Disassembler] LLM call timed out (%ds)", config.LLM_TIMEOUT)
+            log_action("disassembler", "llm_timeout", "FAILED", f"timeout={config.LLM_TIMEOUT}s", "L1 拆解逾時")
+            return Result(success=False, error=f"LLM 呼叫逾時 ({config.LLM_TIMEOUT}s)")
         except Exception as e:
             logger.error("[Disassembler] LLM call failed: %s", e, exc_info=True)
             log_action("disassembler", "llm_call_failed", "FAILED", str(e), "L1 拆解失敗")

@@ -11,7 +11,7 @@ import logging
 import re
 from typing import Any, List, Optional
 
-import config as config
+import config
 from core.health import log_action
 from core.json_utils import parse_first_json
 from core.prompts import BATCH_SUMMARY_PROMPT, IMPORTANCE_PROMPT, SUMMARY_PROMPT

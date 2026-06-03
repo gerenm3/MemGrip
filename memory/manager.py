@@ -11,7 +11,7 @@ import logging
 import time
 from typing import Any, Dict, List, Optional
 
-import config as config
+import config
 from core.health import log_action
 from memory.buffer import ConversationBuffer
 from models.blueprints import Result

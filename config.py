@@ -94,6 +94,7 @@ RERANKER_MODEL_NAME = ""
 MAX_CLARIFY_ROUNDS = 2       # 最多澄清輪數
 CLARIFY_TIMEOUT = 20         # 每次 clarify LLM 呼叫逾時（秒）
 CLARIFY_MAX_ATTEMPTS = 3     # clarify 最多嘗試次數
+LLM_TIMEOUT = 120            # 一般 LLM 呼叫逾時（秒）
 
 # --- Clarify ---
 CLARIFY_TEMPERATURE = 0.1

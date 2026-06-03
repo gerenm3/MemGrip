@@ -13,7 +13,7 @@ import os
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
 
-import config as config
+import config
 from models.blueprints import Result
 
 logger = logging.getLogger(__name__)

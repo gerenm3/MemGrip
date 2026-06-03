@@ -15,7 +15,7 @@ from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import config as config
+import config
 from models.blueprints import UnitStatus, UnitResult
 
 logger = logging.getLogger(__name__)

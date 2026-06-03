@@ -13,7 +13,7 @@ import uuid
 from typing import Dict, List
 
 import chromadb
-import config as config
+import config
 
 from core.health import log_action
 from core.json_utils import parse_all_jsons, dump_json_str
