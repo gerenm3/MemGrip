@@ -9,7 +9,7 @@
 
 import logging
 import re
-from typing import Any, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import config
 from core.health import log_action
@@ -31,8 +31,8 @@ class ConversationSummarizer:
 
     def __init__(
         self,
-        call_model_func: Any,
-        call_embedding_func: Any,
+        call_model_func: Callable[..., Awaitable[Result]],
+        call_embedding_func: Callable[..., Awaitable[Result]],
     ) -> None:
         self.call_model_func = call_model_func
         self.call_embedding_func = call_embedding_func
@@ -177,9 +177,6 @@ class ConversationSummarizer:
             )
             if result_obj.success:
                 summary_text = result_obj.data if isinstance(result_obj.data, str) else str(result_obj.data)
-                parsed = parse_first_json(summary_text)
-                if isinstance(parsed, dict) and "intent" in parsed and "decisions" in parsed:
-                    return Result(success=True, data={"summary": summary_text, "embedding": embedding})
                 return Result(success=True, data={"summary": summary_text, "embedding": embedding})
             return Result(success=False, error=result_obj.error or "batch summarize failed")
         except Exception as e:

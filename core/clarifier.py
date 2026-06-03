@@ -13,7 +13,7 @@ import json
 import logging
 import re
 import config
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from models.blueprints import Result
 
@@ -36,7 +36,7 @@ class Clarifier:
 
     def __init__(
         self,
-        call_model_func: Any,
+        call_model_func: Callable[..., Awaitable[Result]],
         buffer: Any,
         summary: Any,
     ) -> None:

@@ -11,7 +11,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Tuple
+from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple
 
 import config
 from clients.message_builder import MessageBuilder
@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class Responder:
     """回覆生成器：整合所有 Unit 結果生成回覆"""
 
-    def __init__(self, call_model_func: Any = None) -> None:
+    def __init__(self, call_model_func: Optional[Callable[..., Awaitable[Result]]] = None) -> None:
         self.call_model_func = call_model_func
 
     async def reply_simple(

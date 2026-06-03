@@ -12,6 +12,7 @@ import os
 
 from mcp import ClientSession
 from mcp.client.stdio import stdio_client
+from typing import Any
 
 import config
 from models.blueprints import Result
@@ -22,7 +23,7 @@ _TIMEOUT_RAW = getattr(config, "MCP_TIMEOUT_SECONDS", 30)
 TIMEOUT_SECONDS = max(1, int(_TIMEOUT_RAW))
 
 
-def _get_content_text(content_item):
+def _get_content_text(content_item: Any) -> str:
     """安全取得 content item 的 text 屬性."""
     if hasattr(content_item, "text") and content_item.text is not None:
         return content_item.text
@@ -34,7 +35,7 @@ def _get_content_text(content_item):
 class MCPClient:
     """MCP Server 通訊客戶端."""
 
-    def __init__(self, adapter_map: dict = None) -> None:
+    def __init__(self, adapter_map: dict[str, Any] | None = None) -> None:
         """初始化 MCPClient.
 
         Args:
@@ -48,11 +49,11 @@ class MCPClient:
         from clients.mcp_adapters import ADAPTER_MAP
         self.adapter_map = ADAPTER_MAP
 
-    def _get_adapter(self, server_name: str):
+    def _get_adapter(self, server_name: str) -> Any:
         """取得指定 server 的 adapter."""
         return self.adapter_map.get(server_name)
 
-    async def get_tools(self, server_name: str) -> Result:
+    async def get_tools(self, server_name: str) -> Result[Any]:
         """取得指定伺服器的工具列表.
 
         Args:
@@ -85,7 +86,7 @@ class MCPClient:
         except Exception as e:
             return Result(success=False, error=f"get_tools 異常: {e}")
 
-    async def call_tool(self, server_name: str, tool_name: str, tool_args: dict) -> str:
+    async def call_tool(self, server_name: str, tool_name: str, tool_args: dict[str, Any]) -> str:
         """執行 MCP 工具並回傳結果字串.
 
         Args:

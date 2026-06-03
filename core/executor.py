@@ -10,7 +10,7 @@
 import asyncio
 import logging
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import config
 from clients.message_builder import MessageBuilder
@@ -27,8 +27,8 @@ class Executor:
 
     def __init__(
         self,
-        call_model_func: Any = None,
-        execute_tool_func: Any = None,
+        call_model_func: Optional[Callable[..., Awaitable[Result]]] = None,
+        execute_tool_func: Optional[Callable[..., Awaitable[Result]]] = None,
     ) -> None:
         self.call_model_func = call_model_func
         self.execute_tool_func = execute_tool_func
@@ -175,7 +175,7 @@ class Executor:
         return Result(success=True, data={"output": output, "loop_count": loop_count})
 
     @staticmethod
-    def _resolve_unit_placeholders(goal: str, upstream_outputs: dict) -> str:
+    def _resolve_unit_placeholders(goal: str, upstream_outputs: Dict[str, str]) -> str:
         """將 goal 中的 <unit:id> 標記替換為可讀標籤.
 
         對 upstream_outputs 中存在的 unit id 使用「單元 N」替換；

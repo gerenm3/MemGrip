@@ -15,7 +15,7 @@ import logging
 import os
 import re
 import threading
-from typing import Any, List, Optional
+from typing import Any, Awaitable, Callable, List, Optional
 
 import config
 from clients.message_builder import MessageBuilder
@@ -32,7 +32,7 @@ class Router:
 
     def __init__(
         self,
-        call_model_func: Any,
+        call_model_func: Callable[..., Awaitable[Result]],
         patterns_path: str = config.PATTERNS_PATH,
     ) -> None:
         self.call_model_func = call_model_func

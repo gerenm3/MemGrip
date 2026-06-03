@@ -11,7 +11,7 @@ import asyncio
 import json
 import logging
 import re
-from typing import Any, List
+from typing import Any, Awaitable, Callable, List, Optional
 
 import config
 from clients.message_builder import MessageBuilder
@@ -73,7 +73,7 @@ assigned_constraints：分配給此單元的 constraints 清單（字串陣列�
 class Disassembler:
     """L1 戰略拆解器：將 clarify 結果拆成 Units"""
 
-    def __init__(self, call_model_func: Any) -> None:
+    def __init__(self, call_model_func: Callable[..., Awaitable[Result]]) -> None:
         self.call_model_func = call_model_func
         if not callable(call_model_func):
             raise TypeError("call_model_func must be callable")
@@ -81,7 +81,7 @@ class Disassembler:
     async def disassemble(
         self,
         clarify_result: dict,
-        available_servers: List[str] = None,
+        available_servers: Optional[List[str]] = None,
         skill_guide: str = "",
         feedback: str = "",
     ) -> Result:

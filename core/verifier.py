@@ -9,7 +9,7 @@
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import config
 from clients.message_builder import MessageBuilder
@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class Verifier:
     """輸出驗證器：檢查 Unit 輸出是否符合預期"""
 
-    def __init__(self, call_model_func: Any) -> None:
+    def __init__(self, call_model_func: Callable[..., Awaitable[Result]]) -> None:
         self.call_model_func = call_model_func
         if not callable(call_model_func):
             raise TypeError("call_model_func must be callable")

@@ -9,7 +9,7 @@
 
 import logging
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import config
 from core.health import log_action
@@ -30,7 +30,7 @@ class MemoryManager:
 
     def __init__(
         self,
-        call_embedding_func: Any,
+        call_embedding_func: Callable[..., Awaitable[Result]],
         vector_store: Any,
         summary_store: Any,
         temp_cache: Any = None,

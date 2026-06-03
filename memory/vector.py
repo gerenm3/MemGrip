@@ -35,7 +35,7 @@ class ConversationVector:
             metadata={"hnsw:space": "cosine"}
         )
 
-    def add(self, summary: str, raw: list, embedding: list) -> None:
+    def add(self, summary: str, raw: List[Dict], embedding: List[float]) -> None:
         """原子性寫入：先 raw → 再 summary，失敗時回滾 raw。
 
         兩步都成功才算完成，任一失敗則拋出例外。
@@ -137,7 +137,7 @@ class ConversationVector:
 
         return result
 
-    def compare(self, embedding: list) -> float:
+    def compare(self, embedding: List[float]) -> float:
         """計算 query embedding 與向量庫的相似度（0.0-1.0）。
 
         公式：將 chromadb cosine distance [0, 2] 映射回 [0, 1]。
@@ -153,7 +153,7 @@ class ConversationVector:
         score = 1.0 - distance / 2
         return max(0.0, min(1.0, score))
 
-    def search(self, embedding: list, top_k: int) -> list:
+    def search(self, embedding: List[float], top_k: int) -> List[str]:
         """搜尋與 embedding 最相似的 top_k 筆 raw 資料。
 
         底層：先以 summary_collection 的 cosine distance 排序取得 top_k ID，

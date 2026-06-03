@@ -12,6 +12,7 @@ import logging
 import os
 import threading
 from datetime import datetime
+from typing import Any
 
 import config
 
@@ -39,7 +40,7 @@ class SkillManager:
     def _history_dir(self, task_type: str, level: str = "global") -> str:
         return os.path.join(self._skill_path(task_type, level), "history")
 
-    def init_skill_dirs(self, task_type: str = "global", level: str = "global"):
+    def init_skill_dirs(self, task_type: str = "global", level: str = "global") -> None:
         """初始化 skills/{level}/{task_type}/ 及 history 目錄."""
         if task_type == "global":
             base = self._level_path(level)
@@ -48,7 +49,7 @@ class SkillManager:
         os.makedirs(base, exist_ok=True)
         os.makedirs(self._history_dir(task_type, level), exist_ok=True)
 
-    def save_skill(self, task_type: str, skill_data: dict, level: str = "l1") -> None:
+    def save_skill(self, task_type: str, skill_data: dict[str, Any], level: str = "l1") -> None:
         """儲存當前 skill 指導"""
         fpath = self._current_skill_file(task_type, level)
         os.makedirs(os.path.dirname(fpath), exist_ok=True)
@@ -56,7 +57,7 @@ class SkillManager:
             with open(fpath, "w", encoding="utf-8") as f:
                 json.dump(skill_data, f, ensure_ascii=False, indent=2)
 
-    def load_skill(self, task_type: str, level: str = "l1") -> dict:
+    def load_skill(self, task_type: str, level: str = "l1") -> dict[str, Any]:
         """載入當前 skill 指導."""
         current_file = self._current_skill_file(task_type, level)
         if not os.path.exists(current_file):
@@ -73,7 +74,7 @@ class SkillManager:
             with open(current_file, "r", encoding="utf-8") as f:
                 return json.load(f)
 
-    def save_history(self, task_type: str, diagnosis: dict, update: dict, level: str = "l1") -> str:
+    def save_history(self, task_type: str, diagnosis: dict[str, Any], update: dict[str, Any], level: str = "l1") -> str:
         """儲存修改歷史。回傳 history 檔案路徑."""
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         history_file = os.path.join(self._history_dir(task_type, level), f"{timestamp}.json")
@@ -91,7 +92,7 @@ class SkillManager:
         current = self.load_skill(task_type, level)
         return current.get("skill_version", 0) if current else 0
 
-    def apply_update(self, task_type: str, updated_skills: dict, diagnosis: dict, level: str = "l1") -> dict:
+    def apply_update(self, task_type: str, updated_skills: dict[str, Any], diagnosis: dict[str, Any], level: str = "l1") -> dict[str, Any]:
         """套用診斷結果到 skill 指導並儲存歷史。
         
         自動遞增 skill_version。
@@ -106,7 +107,7 @@ class SkillManager:
             self.save_history(task_type, diagnosis, updated_skills, level)
         return current
 
-    def skill_guide_to_prompt(self, skill_guide) -> str:
+    def skill_guide_to_prompt(self, skill_guide: Any) -> str:
         """將 skill_guide 轉換為適合注入 prompt 的純文字字串."""
         if not skill_guide:
             return ""
