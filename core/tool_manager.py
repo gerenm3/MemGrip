@@ -8,6 +8,7 @@ from typing import Any, List, Optional
 from clients.message_builder import MessageBuilder
 from clients.mcp_adapters import SERVER_REGISTRY, ADAPTER_MAP
 from core.health import log_action
+from core.prompts import TOOL_EXECUTION_PROMPT
 from models.blueprints import Result
 
 logger = logging.getLogger(__name__)
@@ -112,7 +113,7 @@ class ToolManager:
     async def run_agentic_loop(self, goal: str, rag_content: str, all_tools: list, max_iterations: int = 15, environment: str = "") -> Result:
         """Agentic Loop：迭代呼叫模型直到沒有工具調用或達到上限"""
         try:
-            system_prompt = config.TOOL_EXECUTION_PROMPT.format(
+            system_prompt = TOOL_EXECUTION_PROMPT.format(
                 tools=json.dumps(all_tools, ensure_ascii=False, indent=2),
                 environment=environment or ""
             )
@@ -161,8 +162,13 @@ class ToolManager:
         tools: Optional[List[dict]] = None,
         caller: str = "tool_loop"
     ) -> tuple[str, list]:
-        """呼叫語言模型"""
-        content, tool_calls = await self.call_model_func(
+        """呼叫語言模型
+        
+        支援兩種回傳型別：
+        - Result 物件（來自 call_model 公用函式）
+        - tuple[str, list]（來自 OllamaClient.chat）
+        """
+        result = await self.call_model_func(
             model, messages,
             getattr(config, 'TOOL_EXECUTION_TEMPERATURE', 0.3),
             getattr(config, 'TOOL_EXECUTION_MAX_TOKENS', 8192),
@@ -170,6 +176,14 @@ class ToolManager:
             tools or None,
             caller=caller,
         )
+        
+        # 處理 Result 物件與 tuple 兩種型別
+        if isinstance(result, Result):
+            content = result.data or ""
+            tool_calls = result.tool_calls or []
+        else:
+            content, tool_calls = result
+        
         return content, tool_calls or []
 
     def _build_assistant_msg(

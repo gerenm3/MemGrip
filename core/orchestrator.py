@@ -298,7 +298,7 @@ class Orchestrator:
         loop_result = await self.tool_manager.run_agentic_loop(
             goal=goal,
             rag_content=rag,
-            server_name=server_name,
+            environment=self.tool_manager.tool_environments.get(server_name, ""),
             all_tools=all_tools,
         )
 
@@ -865,19 +865,27 @@ class Orchestrator:
         """
         if not self._pending_clarify_result:
             return "澄清結果遺失，請重新輸入。"
-
-        path = self._pending_path or "tool"
+        
+        # 用澄清後的 goal 重新路由，取得正確的 intent
+        clarified_goal = self._pending_clarify_result.get("goal", user_input)
+        new_route = await self.router.route(clarified_goal)
+        new_route_data = new_route.data if new_route.success else {}
+        path = new_route_data.get("intent", self._pending_path or "tool")
+        domain = new_route_data.get("domain", self._pending_domain)
+        
+        # simple 升級為 tool（澄清後的任務一定需要工具或多步驟）
+        if path == "simple":
+            path = "tool"
+        
         buffer = self._pending_buffer
         summary = self._pending_summary
         rag = self._pending_rag
-        domain = self._pending_domain
-
+        
         if path == "complex":
             return await self._dispatch_complex_with_clarified(
                 user_input, buffer, summary, rag, domain
             )
         else:
-            # path == "tool"
             return await self._resume_tool(
                 user_input, buffer, summary, rag
             )

@@ -39,9 +39,9 @@ IMPORTANCE_PROMPT = """你是一個記憶重要性評估器。判斷一段對話
 ROUTE_PROMPT = """你是一個分類器。根據用戶輸入同時判斷意圖、是否需要歷史記憶、以及領域。
 
 【intent 定義】
-simple：一次推理即可回答，不需要工具或多個步驟。
-tool：需要呼叫外部工具或取得即時資料，且一次即可完成。
-complex：需要多個步驟或工具才能完成。
+simple：一次推理即可回答，不需要工具或外部資訊。
+tool：需要使用工具取得、整理或轉換資料，任務目標已明確。
+complex：需要使用工具，且任務需要分析、規劃、設計或決策，執行流程需要先規劃。
 
 【need_rag 定義】
 true：輸入有模糊指代或缺少必要資訊，沒有對話歷史就無法理解。
@@ -52,15 +52,16 @@ general：日常對話、個人助理、一般知識問答
 software_dev：程式設計、開發、技術問題
 it_security：資安、網路、系統管理
 
-範例:
-輸入:「什麼是遞迴？」→ {"intent": "simple", "need_rag": false, "domain": "general"}
-輸入:「搜尋今天的比特幣價格」→ {"intent": "tool", "need_rag": false, "domain": "general"}
-輸入:「幫我建立一個登入系統」→ {"intent": "complex", "need_rag": false, "domain": "software_dev"}
-輸入:「繼續」→ {"intent": "simple", "need_rag": true, "domain": "general"}
-
 若不確定 need_rag，輸出 true。
 只輸出 JSON，不要其他文字。
-{"intent": "simple|tool|complex", "need_rag": true|false, "domain": "general|software_dev|it_security"}"""
+{"intent": "simple|tool|complex", "need_rag": true|false, "domain": "general|software_dev|it_security"}
+範例:
+「什麼是遞迴？」→ {"intent": "simple", "need_rag": false, "domain": "general"}
+「讀取兩個檔案並整理內容」→ {"intent": "tool", "need_rag": false, "domain": "general"}
+「搜尋今天的比特幣價格」→ {"intent": "tool", "need_rag": false, "domain": "general"}
+「分析 CVE 記錄並評估風險，提出修補計畫」→ {"intent": "complex", "need_rag": false, "domain": "it_security"}
+"""
+
 
 CLARIFY_PROMPT = """你是一個任務描述整理器。請根據用戶輸入、對話歷史與知識庫，篩選出當前執行意圖與涉及的實體，並只輸出 JSON，不要其他文字。
 ## 輸入欄位
@@ -90,7 +91,7 @@ CLARIFY_PROMPT = """你是一個任務描述整理器。請根據用戶輸入、
   "constraints": ["從用戶輸入中提取的限制、條件與範圍要求（見上方指南）"],
   "rules": ["從用戶輸入與對話歷史中提取影響執行邏輯的規則"],
   "success_criteria": ["怎樣算完成"],
-  "questions": ["需要進一步澄清的問題（若資訊不足，最多 3 個）"]
+  "questions": ["需要進一步澄清的問題（若缺少執行任務所必須的、且無法透過工具或執行時自行取得的資訊時才提問，每次只問最關鍵的一個問題）"]
 }"""
 
 # -------------- Disassembly Prompt (System - Fixed) --------------
@@ -140,7 +141,7 @@ STEP_EXECUTE_PROMPT = """{role}
 
 ## 規則
 - 嚴禁在輸入資料之外自行補充、推論或生成任何內容
-- 當資料不足以完全滿足任務要求時，使用最接近的替代方案完成任務，並在輸出中說明資料限制與替代方案
+- 當資料不足、工具回傳錯誤或找不到目標資源時，嘗試最接近的替代方案（如列出可用資源、使用相似名稱）完成任務，並在輸出中說明情況
 - 直接輸出步驟結果，不要輸出執行過程的說明
 - 輸出中不得包含「上游單元」、「Step」等系統內部標記
 - 完成後立即停止

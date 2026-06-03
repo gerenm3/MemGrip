@@ -53,7 +53,7 @@ class MCPClient:
         """取得指定 server 的 adapter."""
         return self.adapter_map.get(server_name)
 
-    async def get_tools(self, server_name: str) -> Result[Any]:
+    async def get_tools(self, server_name: str) -> Result:
         """取得指定伺服器的工具列表.
 
         Args:
