@@ -100,6 +100,9 @@ class Orchestrator:
         self._session_id: Optional[str] = None
         self._tools_initialized = False
 
+        # Background task tracking
+        self._background_tasks: set[asyncio.Task] = set()
+
         # Storage
         self._unit_store: Optional[UnitStore] = None
         self._step_store: Optional[StepStore] = None
@@ -511,12 +514,17 @@ class Orchestrator:
 
         if triggered:
             logger.info("[Orchestrator] LVS triggered, starting optimizer")
-            asyncio.create_task(
-                self._run_optimizer(self._session_id, domain, "l1")
-            )
-            asyncio.create_task(
-                self._run_optimizer(self._session_id, domain, "l2")
-            )
+            def _on_optimizer_done(task: asyncio.Task) -> None:
+                self._background_tasks.discard(task)
+                if task.exception():
+                    logger.error("[Orchestrator] optimizer task exception: %s", task.exception(), exc_info=True)
+
+            for level in ("l1", "l2"):
+                t = asyncio.create_task(
+                    self._run_optimizer(self._session_id, domain, level)
+                )
+                t.add_done_callback(_on_optimizer_done)
+                self._background_tasks.add(t)
 
         return reply
 
@@ -817,7 +825,14 @@ class Orchestrator:
     async def _summarize_if_needed(self) -> None:
         """非同步 flush memory."""
         try:
-            asyncio.create_task(self.memory.flush())
+            def _on_flush_done(task: asyncio.Task) -> None:
+                self._background_tasks.discard(task)
+                if task.exception():
+                    logger.error("[Orchestrator] flush task exception: %s", task.exception(), exc_info=True)
+
+            t = asyncio.create_task(self.memory.flush())
+            t.add_done_callback(_on_flush_done)
+            self._background_tasks.add(t)
         except Exception as e:
             logger.warning("[Orchestrator] flush 失敗: %s", e)
 

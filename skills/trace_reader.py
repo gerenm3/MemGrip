@@ -11,12 +11,29 @@ import config
 
 logger = logging.getLogger(__name__)
 
+# 模組層快取: {path: (mtime, results)}
+_cache: dict[str, tuple[float, list]] = {}
+_mtimes: dict[str, float] = {}
+
 
 def _load_jsonl(path: str) -> list:
-    """讀取 JSONL 檔案，回傳所有列的列表."""
+    """讀取 JSONL 檔案，回傳所有列的列表.
+
+    使用模組層快取：若檔案修改時間未變則回傳快取結果。
+    """
     p = Path(path)
     if not p.exists():
         return []
+
+    try:
+        mtime = p.stat().st_mtime
+    except OSError:
+        return []
+
+    cached = _cache.get(path)
+    if cached is not None and cached[0] == mtime:
+        return cached[1]
+
     results = []
     with p.open("r", encoding="utf-8") as f:
         for line in f:
@@ -27,7 +44,14 @@ def _load_jsonl(path: str) -> list:
                 results.append(json.loads(line))
             except json.JSONDecodeError:
                 continue
+
+    _cache[path] = (mtime, results)
     return results
+
+
+def _clear_cache() -> None:
+    """清除 JSONL 快取（供測試或手動刷新用）."""
+    _cache.clear()
 
 
 def _extract_tool_calls_from_messages(messages: list) -> list:
