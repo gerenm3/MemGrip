@@ -229,16 +229,16 @@ def build_execution_record(session_id: str) -> dict | None:
             msgs = t.get("messages", [])
             for msg in msgs:
                 content = msg.get("content", "")
-                if isinstance(content, str) and '"passed"' in content:
-                    import json as _json
-                    try:
-                        parsed = _json.loads(content) if not isinstance(content, dict) else content
-                        if isinstance(parsed, dict) and parsed.get("passed") is True:
-                            verifier_pass += 1
-                    except (_json.JSONDecodeError, TypeError):
-                        # 嘗試從字串中提取
-                        if '"passed": true' in content or "'passed': true" in content:
-                            verifier_pass += 1
+                if not isinstance(content, str):
+                    continue
+                try:
+                    # 使用 parse_first_json 正確解析 JSON（而非子字串匹配）
+                    from core.json_utils import parse_first_json
+                    obj = parse_first_json(content)
+                    if isinstance(obj, dict) and obj.get("passed") is True:
+                        verifier_pass += 1
+                except Exception:
+                    pass
                     break
 
     verifier_pass_ratio = verifier_pass / verifier_total if verifier_total > 0 else 1.0

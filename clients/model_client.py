@@ -19,7 +19,7 @@ from models.blueprints import Result
 logger = logging.getLogger(__name__)
 
 
-async def _call_model(
+async def call_model(
     model: str,
     messages: List[Dict[str, str]],
     temperature: float = 0.7,

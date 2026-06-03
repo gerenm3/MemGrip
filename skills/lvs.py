@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from core.health import log_action
+from core.json_utils import parse_first_json
 from models.blueprints import UnitStatus
 
 logger = logging.getLogger(__name__)
@@ -165,7 +166,6 @@ class LVS:
             content = msg.get("content", "")
             if not isinstance(content, str):
                 continue
-            from core.json_utils import parse_first_json
             obj = parse_first_json(content)
             if isinstance(obj, dict) and "passed" in obj:
                 return bool(obj["passed"])
@@ -179,7 +179,7 @@ class LVS:
                     data = json.load(f)
                     if "global_score" in data:
                         return data
-            except (json.JSONDecodeError, Exception) as e:
+            except Exception as e:
                 logger.warning("[LVS] lvs_state.json 格式錯誤，重建檔案：%s", e)
         return {"global_score": 0.0, "last_optimizer_run": None}
 

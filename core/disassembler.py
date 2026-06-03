@@ -34,12 +34,13 @@ DISASSEMBLY_USER_EXTRA = """
 以下為本次任務的 constraints 清單：
 {constraints_list}
 
-分配規則：
+ 分配規則：
 - 在規劃每個 unit 時，從上方 constraints 清單中選出與此 unit 職責語意相關的條目
-- 選取標準：此 unit 的執行結果是否需要滿足這條 constraint
+- Local constraint（執行時需主動滿足）：分配給執行該操作的 unit
+- Global constraint（跨 unit 的整體要求）：分配給最終整合輸出的 unit
 - 一條 constraint 可以分配給多個 unit
-- 禁止自行創造新的 constraint 名稱，只能從上方清單中選取原文
-- 若此 unit 與所有 constraints 都無關，assigned_constraints 可以為空陣列
+- 只從清單中選取原文，不自創名稱
+- 與所有 constraints 無關的 unit，assigned_constraints 可為空
 
 ## 輸出格式
 必須輸出合法的 JSON 陣列，以 [ 開頭，以 ] 結尾。禁止輸出 markdown code block。

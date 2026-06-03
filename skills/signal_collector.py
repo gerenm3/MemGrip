@@ -11,13 +11,11 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import config
-from clients.model_client import _call_model
+from clients.model_client import call_model
 from skills.skill_manager import SkillManager
 from skills.trace_reader import build_execution_record
 
 logger = logging.getLogger(__name__)
-
-_signal_manager = SkillManager()
 
 # Layer 3 品質問題類型
 _L3_ISSUE_TYPES = [
@@ -53,8 +51,9 @@ def collect(session_id: str, task_type: str, task_record: dict | None = None) ->
             logger.warning("[signal_collector] 找不到 session %s 的執行記錄", session_id)
             return None
 
-    # 取得當前 skill_version
-    skill_version = _signal_manager.get_version(task_type, "l1")
+    # 取得當前 skill_version（局部實例，避免多 session 狀態共享）
+    signal_manager = SkillManager()
+    skill_version = signal_manager.get_version(task_type, "l1")
 
     signal = {
         "session_id": session_id,
@@ -254,7 +253,7 @@ def _evaluate_unit_quality(
     """
     prompt = _build_layer3_prompt(expected_output, actual_output, constraints)
 
-    result = _call_model(
+    result = call_model(
         model=config.MEDIUM_MODEL_NAME,
         messages=[{"role": "user", "content": prompt}],
         temperature=0,

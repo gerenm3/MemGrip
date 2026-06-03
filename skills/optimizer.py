@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import config
-from clients.model_client import _call_model
+from clients.model_client import call_model
 from models.blueprints import Result
 from skills.skill_manager import SkillManager
 
@@ -236,7 +236,7 @@ class Optimizer:
   }}
 }}"""
 
-        result = await _call_model(
+        result = await call_model(
             model=config.LARGE_MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
@@ -294,7 +294,7 @@ class Optimizer:
   "reason": "驗證理由"
 }}"""
 
-        result = await _call_model(
+        result = await call_model(
             model=config.LARGE_MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,
@@ -417,7 +417,7 @@ class Optimizer:
   "uncertainty_handling": {{"problem": "...", "direction": "..."}}
 }}"""
 
-        result = await _call_model(
+        result = await call_model(
             model=config.LARGE_MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
             temperature=0,

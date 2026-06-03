@@ -143,11 +143,12 @@ class MemoryManager:
         if not search_results:
             return ""
 
-        query_similarity = self.vector_store.compare(query_embedding)
-        if query_similarity < min_similarity:
+        # 澄清：compare() 回傳 query_embedding 與向量庫中最近鄰的相似度分數
+        similarity_score = self.vector_store.compare(query_embedding)
+        if similarity_score < min_similarity:
             logger.debug(
                 "[MemoryManager] retrieve: 相似度 %.2f 低於閾值 %.2f，捨棄",
-                query_similarity, min_similarity
+                similarity_score, min_similarity
             )
             return ""
 
