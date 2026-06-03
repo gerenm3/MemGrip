@@ -39,26 +39,27 @@ def log_model_call(
     unit_id: Optional[str] = None,
     step_id: Optional[str] = None,
 ) -> None:
-    """將模型呼叫記錄寫入 trace.jsonl"""
-    trace_entry = {
-        "session_id": _session_id_var.get(),
-        "ts": time.time(),
-        "caller": caller,
-        "model": model,
-        "messages": messages,
-        "response": response,
-        "tool_calls": tool_calls,
-        "unit_id": unit_id,
-        "step_id": step_id,
-    }
-
-    trace_path = Path(getattr(config, 'TRACE_LOG_PATH', 'trace.jsonl'))
+    """將模型呼叫記錄寫入 logs/traces/{session_id}.jsonl（按 session 分檔）"""
+    session_id = _session_id_var.get()
+    trace_dir = Path(config.LOGS_DIR) / "traces"
+    trace_path = trace_dir / f"{session_id}.jsonl"
     try:
-        trace_path.parent.mkdir(parents=True, exist_ok=True)
+        trace_dir.mkdir(parents=True, exist_ok=True)
+        trace_entry = {
+            "session_id": session_id,
+            "ts": time.time(),
+            "caller": caller,
+            "model": model,
+            "messages": messages,
+            "response": response,
+            "tool_calls": tool_calls,
+            "unit_id": unit_id,
+            "step_id": step_id,
+        }
         with open(trace_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(trace_entry, ensure_ascii=False) + "\n")
     except Exception as e:
-        logger.error("[tracer] 寫入 trace.jsonl 失敗: %s", e, exc_info=True)
+        logger.error("[tracer] 寫入 trace 失敗: %s", e, exc_info=True)
 
 
 def log_task(

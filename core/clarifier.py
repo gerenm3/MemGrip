@@ -51,7 +51,7 @@ class Clarifier:
         """
         try:
             parsed = await self._clarify(user_input, buffer_text, summary_text)
-            log_action("clarifier", "clarify_success", "OK")
+            log_action("clarifier", "clarify_done", "OK", f"goal={parsed.get('goal', '')}, constraints={len(parsed.get('constraints', []))}")
             return Result(success=True, data=parsed, error="")
         except Exception as e:
             log_action("clarifier", "clarify_retry_exhausted", "DEGRADED", str(e), "無法解析您的輸入")

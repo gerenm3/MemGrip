@@ -136,7 +136,7 @@ class Router:
         if (matched := self._pattern_match(user_input)):
             data = dict(matched)
             data.setdefault("domain", "general")
-            log_action("router", "route_success", "OK", data.get("intent", "simple"))
+            log_action("router", "route", "OK", f"intent={data.get('intent')}, domain={data.get('domain')}, need_rag={data.get('need_rag')}")
             return Result(success=True, data=data)
 
         for attempt in range(_max_attempts):

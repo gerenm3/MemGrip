@@ -90,7 +90,9 @@ def validate_dag(units: List[Unit]) -> Result:
         errors.append("DAG 中沒有任何 root node（所有 Unit 都有依賴）")
 
     if errors:
+        log_action("scheduler", "dag_validate_failed", "DEGRADED", "; ".join(errors), "DAG 驗證失敗")
         return Result(success=False, error="; ".join(errors))
+    log_action("scheduler", "dag_validate_ok", "OK", str(len(units)))
     return Result(success=True)
 
 

@@ -28,3 +28,8 @@ task_trace.jsonl
 storage/
 *.bak
 *.backup_before_opt
+.clinerules/
+.cursor/
+PLAN
+PLAN.md
+tests/L1/test_orch

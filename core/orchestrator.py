@@ -224,6 +224,7 @@ class Orchestrator:
         domain: str,
     ) -> str:
         """Simple 路徑：Router → Responder.reply_simple"""
+        log_action("orchestrator", "dispatch_simple_enter", "OK", "intent=simple")
         result = await self.responder.reply_simple(
             system_prompt=SYSTEM_PROMPT,
             user_input=user_input,

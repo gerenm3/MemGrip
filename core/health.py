@@ -47,13 +47,17 @@ def log_action(module: str, action: str, status: str, detail: str = "", user_mes
         "user_message": user_message,
     }
 
-    log_path = Path(getattr(config, 'HEALTH_LOG_PATH', 'health.jsonl'))
+    log_path = Path(config.HEALTH_LOG_PATH)
     try:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         with open(log_path, "a", encoding="utf-8") as f:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
     except Exception as e:
         logger.error("[health] 寫入 health.jsonl 失敗: %s", e, exc_info=True)
+
+    # Debug mode: print to stdout
+    if config.DEBUG_MODE:
+        print(f"[{module}] {action} | {status} | {detail or ''}")
 
     if status in ("DEGRADED", "FAILED") and user_message:
         _pending_warnings.setdefault(_session_id_var.get(), []).append(user_message)

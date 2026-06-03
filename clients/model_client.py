@@ -13,6 +13,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 import ollama
+from core.health import log_action
 from models.blueprints import Result
 
 logger = logging.getLogger(__name__)
@@ -118,6 +119,7 @@ class OllamaClient:
             (content, tool_calls) 元組
         """
         try:
+            log_action("model_client", "model_call_start", "OK", f"model={model}, caller={caller}")
             response = await self.client.chat(
                 model=model,
                 messages=messages,
@@ -141,8 +143,10 @@ class OllamaClient:
                     step_id=step_id,
                 )
 
+            log_action("model_client", "model_call_end", "OK", f"model={model}, caller={caller}")
             return content, tool_calls
         except Exception as e:
+            log_action("model_client", "model_call_failed", "FAILED", str(e), "模型呼叫失敗")
             logger.error("[OllamaClient] chat failed: %s", e, exc_info=True)
             raise ModelServiceError(f"{type(e).__name__}: {e}") from e
 

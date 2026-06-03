@@ -76,10 +76,11 @@ class Verifier:
         if isinstance(parsed, dict):
             passed = parsed.get("passed", False)
             reason = parsed.get("reason", "")
+            gaps = parsed.get("gaps", [])
             if passed:
                 log_action("verifier", "verify_passed", "OK", unit.unit_id)
             else:
                 log_action("verifier", "verify_failed", "DEGRADED",
-                           f"{unit.unit_id}: {reason}", "單元驗證未通過")
+                           f"{unit.unit_id}: gaps={len(gaps)}", "單元驗證未通過")
             return Result(success=True, data=parsed)
         return Result(success=True, data={"passed": False, "reason": "驗證輸出格式錯誤"})

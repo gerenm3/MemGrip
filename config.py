@@ -160,10 +160,15 @@ TEMP_CACHE_IDLE_SECONDS = 900
 TEMP_CACHE_FORCE_TOKENS = 8000
 TEMP_CACHE_TOP_K = 10
 TEMP_CACHE_EVICTION_THRESHOLD = 0.05
-TRACE_LOG_PATH = "trace.jsonl"
-TASK_TRACE_PATH = "task_trace.jsonl"
-HEALTH_LOG_PATH = "health.jsonl"
-SIGNAL_LOG_PATH = "signal_log.jsonl"
+# --- Log Paths ---
+LOGS_DIR = "logs/"
+TRACE_LOG_PATH = "logs/trace.jsonl"
+TASK_TRACE_PATH = "logs/task_trace.jsonl"
+HEALTH_LOG_PATH = "logs/health.log"
+SIGNAL_LOG_PATH = "logs/signal_log.jsonl"
+
+# --- Debug ---
+DEBUG_MODE = os.getenv("MEMGRIP_DEBUG", "0") == "1"
 
 # --- Vector consistency ---
 VECTOR_REPAIR_INTERVAL = 50

@@ -59,9 +59,11 @@ class Responder:
             if not result_obj.success:
                 return Result(success=False, error=f"reply_simple LLM 失敗: {result_obj.error}")
             reply = result_obj.data if isinstance(result_obj.data, str) else str(result_obj.data)
+            log_action("responder", "reply_simple_complete", "OK")
             return Result(success=True, data=reply)
         except Exception as e:
             logger.error("[Responder] reply_simple 失敗: %s", e, exc_info=True)
+            log_action("responder", "reply_simple_failed", "FAILED", str(e), "簡單回覆失敗")
             return Result(success=False, error=f"reply_simple 失敗: {e}")
 
     async def reply_tool(
@@ -91,9 +93,11 @@ class Responder:
             if not result_obj.success:
                 return Result(success=False, error=f"reply_tool LLM 失敗: {result_obj.error}")
             reply = result_obj.data if isinstance(result_obj.data, str) else str(result_obj.data)
+            log_action("responder", "reply_tool_complete", "OK")
             return Result(success=True, data=reply)
         except Exception as e:
             logger.error("[Responder] reply_tool 失敗: %s", e, exc_info=True)
+            log_action("responder", "reply_tool_failed", "FAILED", str(e), "工具回覆失敗")
             return Result(success=False, error=f"reply_tool 失敗: {e}")
 
     async def integrate(
