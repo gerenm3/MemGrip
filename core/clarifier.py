@@ -9,15 +9,16 @@
 """
 
 import asyncio
-import json
 import logging
-import re
 import config
 from typing import Any, Awaitable, Callable
 
 from models.blueprints import Result
 
 logger = logging.getLogger(__name__)
+
+# Module-level constants
+MAX_CLARIFY_ATTEMPTS = 3
 
 from clients.message_builder import MessageBuilder
 from core.json_utils import parse_first_json
@@ -63,7 +64,7 @@ class Clarifier:
 
         messages = MessageBuilder.build_task(CLARIFY_PROMPT, input_text)
         
-        max_attempts = 3
+        max_attempts = MAX_CLARIFY_ATTEMPTS
         for attempt in range(max_attempts):
             try:
                 result = await asyncio.wait_for(
@@ -119,12 +120,8 @@ class Clarifier:
 
     @staticmethod
     def _parse_json_response(content: str) -> dict | None:
-        """解析 JSON 回應"""
-        match = re.search(r"\{.*?\}", content, re.DOTALL)
-        try:
-            return json.loads(match.group()) if match else None
-        except (json.JSONDecodeError, AttributeError):
-            return None
+        """解析 JSON 回應（使用 parse_first_json）"""
+        return parse_first_json(content)
 
     @staticmethod
     def _default_clarify(user_input: str) -> dict:

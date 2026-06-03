@@ -20,6 +20,10 @@ from models.blueprints import Unit, Result
 
 logger = logging.getLogger(__name__)
 
+# Verification constants
+VERIFY_TEMPERATURE = 0.0
+VERIFY_MAX_TOKENS = 1024
+
 
 class Verifier:
     """輸出驗證器：檢查 Unit 輸出是否符合預期"""
@@ -64,8 +68,8 @@ class Verifier:
                 self.call_model_func(
                     config.MEDIUM_MODEL_NAME,
                     messages,
-                    0.0,
-                    1024,
+                    VERIFY_TEMPERATURE,
+                    VERIFY_MAX_TOKENS,
                     False,
                     caller="verifier",
                 ),

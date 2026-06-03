@@ -22,6 +22,9 @@ _SKILL_LOCK = threading.RLock()
 SKILL_BASE_PATH = config.SKILL_DIR_BASE
 TASK_TYPES = config.TASK_TYPES
 
+# Prompt 常數
+MAX_PITFALLS_IN_PROMPT = 2
+
 
 class SkillManager:
     """Skill Guide 管理器."""
@@ -123,7 +126,7 @@ class SkillManager:
                 continue
             prompt_patterns = dimension_data.get("prompt_patterns", {})
             design_principles = dimension_data.get("design_principles", [])
-            pitfalls = dimension_data.get("pitfalls", [])[:2]
+            pitfalls = dimension_data.get("pitfalls", [])[:MAX_PITFALLS_IN_PROMPT]
 
             lines = [
                 f"[{dimension_name}]",
@@ -141,3 +144,22 @@ class SkillManager:
             segments.append("\n".join(lines))
 
         return "\n\n".join(segments)
+
+    def build_prompt(self, domain: str, level: str = "l1") -> str:
+        """建構 domain prompt：domain → Skill Guide → fallback global → 空字串."""
+        try:
+            skill_data = self.load_skill(domain, level)
+            if skill_data:
+                return self.skill_guide_to_prompt(skill_data)
+        except Exception as e:
+            logger.warning("[SkillManager] 無法載入 domain=%s skill: %s", domain, e)
+
+        # Fallback 到 global
+        try:
+            skill_data = self.load_skill("global", level)
+            if skill_data:
+                return self.skill_guide_to_prompt(skill_data)
+        except Exception as e:
+            logger.warning("[SkillManager] 無法載入 global skill: %s", e)
+
+        return ""

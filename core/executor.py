@@ -21,6 +21,9 @@ from models.blueprints import Step, Result
 
 logger = logging.getLogger(__name__)
 
+# Default constants
+DEFAULT_STEP_EXECUTE_MAX_ITERATIONS = 5
+
 
 class Executor:
     """L3 執行器：負責執行單一 Step"""
@@ -82,7 +85,7 @@ class Executor:
         conversation = [{"role": "system", "content": system_content}] + user_messages
         tools_arg = [step.tool] if step.tool is not None else None
 
-        max_iterations = getattr(config, 'STEP_EXECUTE_MAX_ITERATIONS', 5)
+        max_iterations = getattr(config, 'STEP_EXECUTE_MAX_ITERATIONS', DEFAULT_STEP_EXECUTE_MAX_ITERATIONS)
         loop_count = 0
         successful_tool_results: List[str] = []
         tool_errors: List[str] = []

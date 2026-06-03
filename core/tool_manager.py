@@ -8,10 +8,16 @@ from typing import Any, List, Optional
 from clients.message_builder import MessageBuilder
 from clients.mcp_adapters import SERVER_REGISTRY, ADAPTER_MAP
 from core.health import log_action
+from core.json_utils import parse_first_json
 from core.prompts import TOOL_EXECUTION_PROMPT
 from models.blueprints import Result
 
 logger = logging.getLogger(__name__)
+
+# Tool constants
+DEFAULT_TOOL_MAX_ITERATIONS = 15
+DEFAULT_TOOL_EXECUTION_TEMPERATURE = 0.3
+DEFAULT_TOOL_EXECUTION_MAX_TOKENS = 8192
 
 
 class ToolManager:
@@ -92,8 +98,8 @@ class ToolManager:
             return raw
         if isinstance(raw, str):
             try:
-                return json.loads(raw)
-            except (json.JSONDecodeError, TypeError):
+                return parse_first_json(raw)
+            except (TypeError, ValueError):
                 return {}
         return {}
 
@@ -110,7 +116,7 @@ class ToolManager:
             logger.error("[tool_manager] 工具執行失敗: %s", e, exc_info=True)
             return Result(success=False, error=str(e))
 
-    async def run_agentic_loop(self, goal: str, rag_content: str, all_tools: list, max_iterations: int = 15, environment: str = "") -> Result:
+    async def run_agentic_loop(self, goal: str, rag_content: str, all_tools: list, max_iterations: int = DEFAULT_TOOL_MAX_ITERATIONS, environment: str = "") -> Result:
         """Agentic Loop：迭代呼叫模型直到沒有工具調用或達到上限"""
         try:
             system_prompt = TOOL_EXECUTION_PROMPT.format(
@@ -170,8 +176,8 @@ class ToolManager:
         """
         result = await self.call_model_func(
             model, messages,
-            getattr(config, 'TOOL_EXECUTION_TEMPERATURE', 0.3),
-            getattr(config, 'TOOL_EXECUTION_MAX_TOKENS', 8192),
+            getattr(config, 'TOOL_EXECUTION_TEMPERATURE', DEFAULT_TOOL_EXECUTION_TEMPERATURE),
+            getattr(config, 'TOOL_EXECUTION_MAX_TOKENS', DEFAULT_TOOL_EXECUTION_MAX_TOKENS),
             getattr(config, 'TOOL_EXECUTION_THINK', True),
             tools or None,
             caller=caller,

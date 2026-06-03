@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Optional
 
 import config
 from clients.model_client import call_model
+from core.json_utils import parse_first_json
 from models.blueprints import Result
 from skills.skill_manager import SkillManager
 
@@ -25,6 +26,9 @@ FAILED_UNITS_THRESHOLD = 0
 REPLAN_COUNT_THRESHOLD = 2
 AVG_LOOP_COUNT_THRESHOLD = 4
 CONSTRAINT_SATISFIED_RATIO_THRESHOLD = 0.7
+
+# Default constants
+DEFAULT_VERIFY_TEMPERATURE = 0
 
 
 class Optimizer:
@@ -239,7 +243,7 @@ class Optimizer:
         result = await call_model(
             model=config.LARGE_MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
+            temperature=DEFAULT_VERIFY_TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
             think=True,
             caller="optimizer._update_skills",
@@ -297,7 +301,7 @@ class Optimizer:
         result = await call_model(
             model=config.LARGE_MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
+            temperature=DEFAULT_VERIFY_TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
             think=False,
             caller="optimizer._verify",
@@ -420,7 +424,7 @@ class Optimizer:
         result = await call_model(
             model=config.LARGE_MODEL_NAME,
             messages=[{"role": "user", "content": prompt}],
-            temperature=0,
+            temperature=DEFAULT_VERIFY_TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
             think=False,
             caller="optimizer._analyze_signals",
@@ -438,9 +442,9 @@ class Optimizer:
 
     @staticmethod
     def _extract_json(text: str) -> Any:
-        """從 LLM 輸出提取 JSON."""
+        """從 LLM 輸出提取 JSON (使用 parse_first_json)."""
         text = text.strip()
         if text.startswith("```"):
             text = text.split("\n", 1)[1]
             text = text.rsplit("`", 1)[0]
-        return json.loads(text.strip())
+        return parse_first_json(text)

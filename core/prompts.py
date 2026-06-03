@@ -219,9 +219,15 @@ IS_CLARIFICATION_PROMPT = """你是一個意圖判斷器。判斷用戶的輸入
 
 [USER_INPUT]{user_input}[/USER_INPUT]
 
+判斷標準：
+- true：用戶的輸入與上述問題在語意上有關聯，可理解為對問題的回應（即使回答不完整或只是片段資訊）
+- false：用戶的輸入與上述問題完全無關，明顯是在提出新任務或新問題
+
+若無法確定，輸出 true。
+
 只輸出 JSON，不要其他文字。
-{{"is_clarification": true}}  # 用戶正在回答上述問題
-{{"is_clarification": false}} # 用戶提出全新任務或與上述問題無關
+{{"is_clarification": true}}
+{{"is_clarification": false}}
 """
 
 VERIFY_PROMPT = """你是一個輸出品質審核員。請判斷執行單元是否完成了它的職責，並逐一驗證分配的 constraints。

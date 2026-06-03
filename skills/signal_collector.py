@@ -12,10 +12,18 @@ from typing import Any, Dict, List, Optional
 
 import config
 from clients.model_client import call_model
+from core.json_utils import parse_first_json
 from skills.skill_manager import SkillManager
 from skills.trace_reader import build_execution_record
 
 logger = logging.getLogger(__name__)
+
+# Constants
+TZ_TAIPEI = timedelta(hours=8)
+REPLAN_THRESHOLD = 2
+VERIFIER_PASS_THRESHOLD = 0.8
+RANDOM_AUDIT_PROBABILITY = 0.05
+DEFAULT_LAYER3_TEMPERATURE = 0
 
 # Layer 3 品質問題類型
 _L3_ISSUE_TYPES = [
@@ -59,7 +67,7 @@ def collect(session_id: str, task_type: str, task_record: dict | None = None) ->
         "session_id": session_id,
         "task_type": task_type,
         "skill_version": skill_version,
-        "ts": datetime.now(timezone(timedelta(hours=8))).isoformat(),
+        "ts": datetime.now(timezone(TZ_TAIPEI)).isoformat(),
         # 聚合指標
         "unit_count": execution_data.get("unit_count", 0),
         "replan_count": execution_data.get("replan_count", 0),
@@ -119,11 +127,11 @@ def evaluate_layer3(
 
     # 觸發判定
     is_anomaly = (
-        replan_count > 2
+        replan_count > REPLAN_THRESHOLD
         or failed_units > 0
-        or verifier_pass_ratio < 0.8
+        or verifier_pass_ratio < VERIFIER_PASS_THRESHOLD
     )
-    is_random = random.random() < 0.05
+    is_random = random.random() < RANDOM_AUDIT_PROBABILITY
 
     triggered = is_anomaly or is_random
     trigger_reason = "anomaly" if is_anomaly else "random_audit"
@@ -256,7 +264,7 @@ def _evaluate_unit_quality(
     result = call_model(
         model=config.MEDIUM_MODEL_NAME,
         messages=[{"role": "user", "content": prompt}],
-        temperature=0,
+        temperature=DEFAULT_LAYER3_TEMPERATURE,
         max_tokens=config.MAX_TOKENS,
         think=False,
         caller="signal_collector.layer3",
@@ -318,8 +326,8 @@ def _parse_layer3_response(text: str, unit_id: str) -> Optional[dict]:
         text = text.rsplit("`", 1)[0]
 
     try:
-        parsed = json.loads(text.strip())
-    except json.JSONDecodeError:
+        parsed = parse_first_json(text)
+    except (json.JSONDecodeError, ValueError):
         logger.warning("[layer3] 無法解析 unit=%s 的評估結果", unit_id)
         return None
 

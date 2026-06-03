@@ -24,6 +24,12 @@ class StepStatus(Enum):
     FAILED = "FAILED"
 
 
+class ClarificationState(Enum):
+    """多輪澄清狀態機"""
+    NORMAL = "NORMAL"
+    AWAITING_CLARIFICATION = "AWAITING_CLARIFICATION"
+
+
 ## ── 核心資料結構（§4.0）──
 
 @dataclass

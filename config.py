@@ -80,17 +80,11 @@ LVS_EVENT_SCORES = {
     "loop_hit": 4,
 }
 
-# --- Model ---
-MODEL_BASE_URL = "http://localhost:11434"
-
 # --- Complex Flow 參數 ---
 MAX_REPLAN_ATTEMPTS = 2      # Unit 層級重新規劃上限次數
 CONTEXT_SAFETY_RATIO = 0.8   # Context 安全閾值（80%）
 APPROVAL_TIMEOUT = 1800      # HITL 人工批准逾時（預設 30 分鐘，單位秒）
 EMBEDDING_THRESHOLD = 0.75   # Embedding 相似度閾值
-EMBEDDING_MODEL = "bge-m3"
-EMBEDDING_MODEL_NAME = "bge-m3"
-RERANKER_MODEL_NAME = ""
 MAX_CLARIFY_ROUNDS = 2       # 最多澄清輪數
 CLARIFY_TIMEOUT = 20         # 每次 clarify LLM 呼叫逾時（秒）
 CLARIFY_MAX_ATTEMPTS = 3     # clarify 最多嘗試次數
@@ -106,6 +100,7 @@ ROUTER_MODEL_NAME = "qwen3.5:9b"
 MEDIUM_MODEL_NAME = "qwen3.5:9b"
 LARGE_MODEL_NAME = "qwen3.6:35b-a3b"
 EMBEDDING_MODEL_NAME = "bge-m3"
+MODEL_BASE_URL = "http://localhost:11434"
 
 LARGE_MODEL_MODE = "local"   # local | api | disabled
 LARGE_MODEL_API_KEY = ""

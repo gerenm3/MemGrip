@@ -49,6 +49,18 @@ CONSTRAINT_PENALTY = 5
 # Constraint violation Q 分維度上限
 CONSTRAINT_Q_CAP = 15
 
+# 循環命中閾值
+LOOP_HIT_THRESHOLD = 5
+
+# Constraint 滿足率閾值
+CONSTRAINT_RATIO_THRESHOLD = 0.7
+
+# 平均循環次數閾值
+LOOP_EXCESS_THRESHOLD = 3
+
+# 觸發後分數衰減因子
+SCORE_DECAY_FACTOR = 0.2
+
 # trace.jsonl 檔案大小上限（10 MB）
 MAX_TRACE_SIZE = 10 * 1024 * 1024
 TRACE_KEEP_LINES = 5000
@@ -72,23 +84,23 @@ class LVS:
         units = task_record.get("units", [])
         failed_units = sum(1 for u in units if u.get("status") == "FAILED")
         replan_count = sum(u.get("replan_count", 0) for u in units)
-        loop_hit = sum(1 for u in units if u.get("total_loop_count", 0) >= 5)
+        loop_hit = sum(1 for u in units if u.get("total_loop_count", 0) >= LOOP_HIT_THRESHOLD)
         review_fail = self._count_review_fails(task_record)
         unsatisfied = self._count_unsatisfied_constraints(task_record)
 
         # 新維度：constraint_satisfied_ratio
         constraint_ratio = task_record.get("constraint_satisfied_ratio", 1.0)
         constraint_penalty_score = 0.0
-        if constraint_ratio < 0.7:
+        if constraint_ratio < CONSTRAINT_RATIO_THRESHOLD:
             # 越低分數越高，0.0 → 10 分，0.7 → 0 分
-            constraint_penalty_score = min(10.0, (0.7 - constraint_ratio) / 0.7 * 10.0)
+            constraint_penalty_score = min(10.0, (CONSTRAINT_RATIO_THRESHOLD - constraint_ratio) / CONSTRAINT_RATIO_THRESHOLD * 10.0)
 
         # 新維度：avg_loop_count
         avg_loop = task_record.get("avg_loop_count", 0)
         loop_excess_score = 0.0
-        if avg_loop > 3:
+        if avg_loop > LOOP_EXCESS_THRESHOLD:
             # 超過 3 的部分，每 1 單位 +3 分，上限 6 分
-            loop_excess_score = min(6.0, (avg_loop - 3) * 3.0)
+            loop_excess_score = min(6.0, (avg_loop - LOOP_EXCESS_THRESHOLD) * 3.0)
 
         q = (
             min(30, final_fail * 30)
@@ -253,7 +265,7 @@ class LVS:
             state["global_score"] += q
             triggered = state["global_score"] >= TRIGGER_THRESHOLD
             if triggered:
-                state["global_score"] *= 0.2
+                state["global_score"] *= SCORE_DECAY_FACTOR
                 now = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.gmtime())
                 now_formatted = now[:-2] + ":" + now[-2:]
                 state["last_optimizer_run"] = now_formatted

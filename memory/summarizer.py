@@ -13,11 +13,15 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 import config
 from core.health import log_action
-from core.json_utils import parse_first_json
 from core.prompts import BATCH_SUMMARY_PROMPT, IMPORTANCE_PROMPT, SUMMARY_PROMPT
 from models.blueprints import Result
 
 logger = logging.getLogger(__name__)
+
+# 重要性評估常數
+DEFAULT_IMPORTANCE_SCORE = 0.5
+MIN_IMPORTANCE = 0.0
+MAX_IMPORTANCE = 1.0
 
 
 class ConversationSummarizer:
@@ -112,7 +116,7 @@ class ConversationSummarizer:
             Result(data=float) 重要性分數 (0~1)
         """
         if not self.call_model_func:
-            return Result(success=True, data=0.5)
+            return Result(success=True, data=DEFAULT_IMPORTANCE_SCORE)
 
         prompt = IMPORTANCE_PROMPT.format(SUMMARY=summary)
         messages = [{"role": "user", "content": prompt}]
@@ -128,16 +132,16 @@ class ConversationSummarizer:
             if not result_obj.success:
                 log_action("memory_manager", "importance_llm", "DEGRADED",
                            result_obj.error or "unknown", "重要性評估失敗，使用預設值")
-                return Result(success=True, data=0.5)
+                return Result(success=True, data=DEFAULT_IMPORTANCE_SCORE)
 
             result = result_obj.data if isinstance(result_obj.data, str) else str(result_obj.data)
             match = re.search(r'(\d+\.\d+|\d+)', result)
-            raw_score = float(match.group()) if match else 0.5
-            clamped = max(0.0, min(1.0, raw_score))
+            raw_score = float(match.group()) if match else DEFAULT_IMPORTANCE_SCORE
+            clamped = max(MIN_IMPORTANCE, min(MAX_IMPORTANCE, raw_score))
             return Result(success=True, data=clamped)
         except Exception as e:
             logger.warning("[ConversationSummarizer] 重要性評估失敗：%s", e)
-            return Result(success=True, data=0.5)
+            return Result(success=True, data=DEFAULT_IMPORTANCE_SCORE)
 
     async def batch_summarize(self, items: List[dict]) -> Result:
         """將 TempCache 的 top-k 項目合併為一份長期記憶摘要.

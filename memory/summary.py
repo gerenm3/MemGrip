@@ -14,6 +14,9 @@ from typing import Dict, List
 import config
 from memory.buffer import estimate_tokens
 
+# 時間常數
+SECONDS_PER_HOUR = 3600
+
 
 class ConversationSummary:
     """對話摘要長期儲存。"""
@@ -70,7 +73,7 @@ class TempCache:
             del self.items[worst_id]
 
     def _effective_importance(self, item: Dict) -> float:
-        age_hours = max(0, (time.time() - item["timestamp"]) / 3600)
+        age_hours = max(0, (time.time() - item["timestamp"]) / SECONDS_PER_HOUR)
         return item["confidence"] * math.exp(-config.TEMP_CACHE_DECAY_LAMBDA * age_hours)
 
     def get_top_k(self, k: int) -> List[Dict]:

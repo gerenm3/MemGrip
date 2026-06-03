@@ -18,12 +18,16 @@ from models.blueprints import Result
 
 logger = logging.getLogger(__name__)
 
+# 預設參數
+DEFAULT_TEMPERATURE = 0.7
+DEFAULT_MAX_TOKENS = 8192
+
 
 async def call_model(
     model: str,
     messages: List[Dict[str, str]],
-    temperature: float = 0.7,
-    max_tokens: int = 8192,
+    temperature: float = DEFAULT_TEMPERATURE,
+    max_tokens: int = DEFAULT_MAX_TOKENS,
     think: bool = False,
     tools: Optional[List[Dict]] = None,
     caller: Optional[str] = None,
@@ -94,8 +98,8 @@ class OllamaClient:
         self,
         model: str,
         messages: List[Dict[str, str]],
-        temperature: float = 0.7,
-        max_tokens: int = 8192,
+        temperature: float = DEFAULT_TEMPERATURE,
+        max_tokens: int = DEFAULT_MAX_TOKENS,
         think: bool = False,
         tools: Optional[List[Dict]] = None,
         caller: Optional[str] = None,

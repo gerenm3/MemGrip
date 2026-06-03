@@ -20,6 +20,11 @@ from core.json_utils import parse_all_jsons, dump_json_str
 
 logger = logging.getLogger(__name__)
 
+# 相似度計算常數
+COSINE_DISTANCE_DIVISOR = 2
+MIN_SIMILARITY = 0.0
+MAX_SIMILARITY = 1.0
+
 
 class ConversationVector:
     """雙 collection 向量記憶體"""
@@ -150,8 +155,8 @@ class ConversationVector:
             n_results=1
         )
         distance = result['distances'][0][0]
-        score = 1.0 - distance / 2
-        return max(0.0, min(1.0, score))
+        score = 1.0 - distance / COSINE_DISTANCE_DIVISOR
+        return max(MIN_SIMILARITY, min(MAX_SIMILARITY, score))
 
     def search(self, embedding: List[float], top_k: int) -> List[str]:
         """搜尋與 embedding 最相似的 top_k 筆 raw 資料。

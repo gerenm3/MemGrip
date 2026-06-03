@@ -6,6 +6,7 @@
 - 本地 log 寫入不算 I/O（原則 6）
 """
 
+import hashlib
 import json
 import logging
 import time
@@ -19,6 +20,10 @@ import config
 from models.blueprints import UnitStatus, UnitResult
 
 logger = logging.getLogger(__name__)
+
+# Tracer constants
+TZ_TAIPEI = timedelta(hours=8)
+SYSTEM_MASK_LENGTH = 100
 
 _session_id_var: ContextVar[Optional[str]] = ContextVar("session_id", default=None)
 
@@ -45,12 +50,13 @@ def log_model_call(
     trace_path = trace_dir / f"{session_id}.jsonl"
     try:
         trace_dir.mkdir(parents=True, exist_ok=True)
+        masked_messages = _mask_messages(messages)
         trace_entry = {
             "session_id": session_id,
             "ts": time.time(),
             "caller": caller,
             "model": model,
-            "messages": messages,
+            "messages": masked_messages,
             "response": response,
             "tool_calls": tool_calls,
             "unit_id": unit_id,
@@ -100,11 +106,10 @@ def log_task(
         }
         unit_list.append(unit_info)
 
-    tz_tw = timedelta(hours=8)
     record = {
         "session_id": _session_id_var.get(),
         "task_id": str(uuid.uuid4()),
-        "ts": datetime.now(timezone(tz_tw)).isoformat(),
+        "ts": datetime.now(timezone(TZ_TAIPEI)).isoformat(),
         "task_type": task_type,
         "user_input": user_input,
         "goal": goal,
@@ -168,6 +173,19 @@ def _get_constraint_checks(result: Any) -> List[dict]:
 	if result:
 		return result.constraint_checks
 	return []
+
+
+def _mask_messages(messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """對 messages 做脫敏處理後回傳副本。system role 只記前 100 字元 + MD5 hash。"""
+    masked = []
+    for msg in messages:
+        entry = dict(msg)  # 淺拷貝
+        content = entry.get("content") or ""
+        if entry.get("role") == "system":
+            masked_content = content[:SYSTEM_MASK_LENGTH] + "..." + hashlib.md5(content.encode("utf-8", errors="ignore")).hexdigest()
+            entry["content"] = masked_content
+        masked.append(entry)
+    return masked
 
 
 class Tracer:
