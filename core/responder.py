@@ -54,7 +54,7 @@ class Responder:
             )
             result_obj = await asyncio.wait_for(
                 self.call_model_func(
-                    config.MEDIUM_MODEL_NAME, messages,
+                    config.MODEL_MEDIUM, messages,
                     config.TEMPERATURE, config.MAX_TOKENS, config.THINK,
                     caller="responder"
                 ),
@@ -95,7 +95,7 @@ class Responder:
             ]
             result_obj = await asyncio.wait_for(
                 self.call_model_func(
-                    config.MEDIUM_MODEL_NAME, messages,
+                    config.MODEL_MEDIUM, messages,
                     config.TEMPERATURE, config.MAX_TOKENS, config.THINK,
                     caller="responder_tool"
                 ),
@@ -172,7 +172,7 @@ class Responder:
         if self.call_model_func:
             try:
                 result_obj = await self.call_model_func(
-                    config.MEDIUM_MODEL_NAME, messages,
+                    config.MODEL_MEDIUM, messages,
                     config.INTEGRATION_TEMPERATURE, config.INTEGRATION_MAX_TOKENS,
                     config.INTEGRATION_THINK,
                     caller="integrator",
@@ -274,5 +274,3 @@ class Responder:
                 "status": status_str,
             })
         return summary
-
-

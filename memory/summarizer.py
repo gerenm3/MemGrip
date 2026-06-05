@@ -74,7 +74,7 @@ class ConversationSummarizer:
         messages = [{"role": "user", "content": prompt}]
 
         result_obj = await self.call_model_func(
-            config.MEDIUM_MODEL_NAME,
+            config.MODEL_MEDIUM,
             messages,
             config.SUMMARY_TEMPERATURE,
             config.SUMMARY_MAX_TOKENS,
@@ -122,7 +122,7 @@ class ConversationSummarizer:
         messages = [{"role": "user", "content": prompt}]
         try:
             result_obj = await self.call_model_func(
-                config.MEDIUM_MODEL_NAME,
+                config.MODEL_MEDIUM,
                 messages,
                 config.SUMMARY_TEMPERATURE,
                 config.SUMMARY_MAX_TOKENS,
@@ -172,7 +172,7 @@ class ConversationSummarizer:
         messages = [{"role": "user", "content": prompt}]
         try:
             result_obj = await self.call_model_func(
-                config.MEDIUM_MODEL_NAME,
+                config.MODEL_MEDIUM,
                 messages,
                 config.SUMMARY_TEMPERATURE,
                 config.SUMMARY_MAX_TOKENS,

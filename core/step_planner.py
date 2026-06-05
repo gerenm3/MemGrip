@@ -93,7 +93,7 @@ class StepPlanner:
         try:
             result = await asyncio.wait_for(
                 self.call_model_func(
-                    config.LARGE_MODEL_NAME,
+                    config.MODEL_LARGE,
                     messages,
                     config.STEP_TEMPERATURE,
                     config.STEP_MAX_TOKENS,

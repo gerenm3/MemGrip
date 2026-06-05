@@ -66,7 +66,7 @@ class Verifier:
         try:
             result = await asyncio.wait_for(
                 self.call_model_func(
-                    config.MEDIUM_MODEL_NAME,
+                    config.MODEL_MEDIUM,
                     messages,
                     VERIFY_TEMPERATURE,
                     VERIFY_MAX_TOKENS,

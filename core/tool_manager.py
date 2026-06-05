@@ -119,6 +119,7 @@ class ToolManager:
     async def run_agentic_loop(self, goal: str, rag_content: str, all_tools: list, max_iterations: int = DEFAULT_TOOL_MAX_ITERATIONS, environment: str = "") -> Result:
         """Agentic Loop：迭代呼叫模型直到沒有工具調用或達到上限"""
         try:
+
             system_prompt = TOOL_EXECUTION_PROMPT.format(
                 tools=json.dumps(all_tools, ensure_ascii=False, indent=2),
                 environment=environment or ""
@@ -135,7 +136,7 @@ class ToolManager:
 
             for i in range(max_iterations):
                 content, tool_calls = await self._call_llm(
-                    config.MEDIUM_MODEL_NAME, conversation, tools=all_tools, caller="tool_loop"
+                    config.MODEL_MEDIUM, conversation, tools=all_tools, caller="tool_loop"
                 )
 
                 if tool_calls:
@@ -222,6 +223,6 @@ class ToolManager:
             "content": f"[GOAL]{goal}[/GOAL]\n[EXECUTION_LOG]\n最後輸出結果給用戶。\n[/EXECUTION_LOG]\n請根據以上執行結果，生成一份自然、完整的回覆給用戶。回覆應清晰總結完成的工作，並直接回應用戶的需求。",
         }]
         final_reply, _ = await self._call_llm(
-            config.MEDIUM_MODEL_NAME, reply_conv, caller="final_reply"
+            config.MODEL_MEDIUM, reply_conv, caller="final_reply"
         )
         return final_reply

@@ -241,7 +241,7 @@ class Optimizer:
 }}"""
 
         result = await call_model(
-            model=config.LARGE_MODEL_NAME,
+            model=config.MODEL_LARGE,
             messages=[{"role": "user", "content": prompt}],
             temperature=DEFAULT_VERIFY_TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
@@ -299,7 +299,7 @@ class Optimizer:
 }}"""
 
         result = await call_model(
-            model=config.LARGE_MODEL_NAME,
+            model=config.MODEL_LARGE,
             messages=[{"role": "user", "content": prompt}],
             temperature=DEFAULT_VERIFY_TEMPERATURE,
             max_tokens=config.MAX_TOKENS,
@@ -422,7 +422,7 @@ class Optimizer:
 }}"""
 
         result = await call_model(
-            model=config.LARGE_MODEL_NAME,
+            model=config.MODEL_LARGE,
             messages=[{"role": "user", "content": prompt}],
             temperature=DEFAULT_VERIFY_TEMPERATURE,
             max_tokens=config.MAX_TOKENS,

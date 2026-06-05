@@ -112,7 +112,7 @@ class Router:
         try:
             result = await asyncio.wait_for(
                 self.call_model_func(
-                    config.MEDIUM_MODEL_NAME, messages,
+                    config.MODEL_MEDIUM, messages,
                     config.ROUTE_TEMPERATURE, config.ROUTE_MAX_TOKENS, False,
                     caller=caller,
                 ),
@@ -180,7 +180,7 @@ class Router:
         try:
             probe_result = await asyncio.wait_for(
                 self.call_model_func(
-                    config.MEDIUM_MODEL_NAME, probe_messages,
+                    config.MODEL_MEDIUM, probe_messages,
                     config.ROUTE_TEMPERATURE, config.ROUTE_MAX_TOKENS, False,
                     caller="tool_probe"
                 ),

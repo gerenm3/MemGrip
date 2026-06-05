@@ -69,7 +69,7 @@ class Clarifier:
             try:
                 result = await asyncio.wait_for(
                     self.call_model_func(
-                        config.MEDIUM_MODEL_NAME,
+                        config.MODEL_MEDIUM,
                         messages,
                         config.CLARIFY_TEMPERATURE,
                         config.CLARIFY_MAX_TOKENS,

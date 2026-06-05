@@ -2,7 +2,7 @@
 
 依據 v2 架構設計：
 - 使用 DI 注入所有依賴
-- 直接注入 OllamaClient 實例
+- 直接注入 OllamaClient 實例（底層使用 LiteLLM）
 - 符合 v2 logging 規範
 """
 
@@ -19,6 +19,8 @@ from core.verifier import Verifier
 from core.responder import Responder
 from core.tool_manager import ToolManager
 from clients.mcp_client import MCPClient
+from clients.model_client import call_model as _call_model
+from clients.model_client import call_embedding as _call_embedding
 from memory.manager import MemoryManager
 from memory.vector import ConversationVector
 from memory.summary import ConversationSummary, TempCache
@@ -32,11 +34,11 @@ from models.blueprints import Result
 logger = logging.getLogger(__name__)
 
 
-def _build_call_model(ollama) -> callable:
+def _build_call_model(tracer) -> callable:
     """建立 call_model 函式，供各模組使用.
 
     Args:
-        ollama: OllamaClient 實例
+        tracer: tracer 實例
 
     Returns:
         call_model 函式
@@ -52,34 +54,21 @@ def _build_call_model(ollama) -> callable:
         unit_id: str = None,
         step_id: str = None,
     ) -> Result:
-        try:
-            content, tool_calls = await ollama.chat(
-                model, messages, temperature, max_tokens, think, tools,
-                caller=caller, unit_id=unit_id, step_id=step_id,
-            )
-            return Result(success=True, data=content, tool_calls=tool_calls or [])
-        except Exception as e:
-            logger.error("[bootstrap] model 呼叫失敗: %s", e, exc_info=True)
-            return Result(success=False, error=str(e))
+        return await _call_model(model, messages, temperature, max_tokens, think, tools, caller, unit_id, step_id, tracer=tracer)
     return call_model
 
 
-def _build_call_embedding(ollama) -> callable:
+def _build_call_embedding(tracer) -> callable:
     """建立 call_embedding 函式，供 MemoryManager 使用.
 
     Args:
-        ollama: OllamaClient 實例
+        tracer: tracer 實例
 
     Returns:
         call_embedding 函式
     """
     async def call_embedding(model: str, input_text: str) -> Result:
-        try:
-            embeddings = await ollama.embed(model, input_text)
-            return Result(success=True, data=embeddings)
-        except Exception as e:
-            logger.error("[bootstrap] embedding 呼叫失敗: %s", e, exc_info=True)
-            return Result(success=False, error=str(e))
+        return await _call_embedding(model, input_text, tracer=tracer)
     return call_embedding
 
 
@@ -89,19 +78,18 @@ async def build_orchestrator() -> Orchestrator:
     Returns:
         Orchestrator 實例
     """
-    from clients.model_client import OllamaClient
     from core.tracer import new_session, Tracer
+    from clients.model_client import set_global_tracer
 
     # 初始化 tracer
     new_session()
     tracer = Tracer()
+    # 設定全域 tracer，供 optimizer / signal_collector 等直接 import call_model 的模組使用
+    set_global_tracer(tracer)
 
-    # Ollama Client
-    ollama = OllamaClient(tracer=tracer)
-
-    # 建立呼叫函式
-    call_model = _build_call_model(ollama)
-    call_embedding = _build_call_embedding(ollama)
+    # 建立呼叫函式（注入 tracer）
+    call_model = _build_call_model(tracer)
+    call_embedding = _build_call_embedding(tracer)
 
     # Memory Layer
     vector = ConversationVector()

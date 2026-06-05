@@ -91,8 +91,8 @@ CLARIFY_MAX_ATTEMPTS = 3     # clarify 最多嘗試次數
 LLM_TIMEOUT = 120            # 一般 LLM 呼叫逾時（秒）
 
 # --- Clarify ---
-CLARIFY_TEMPERATURE = 0.1
-CLARIFY_MAX_TOKENS = 500
+CLARIFY_TEMPERATURE = 0.5
+CLARIFY_MAX_TOKENS = 2048
 
 # 統一命名規則：{用途}_MODEL_NAME
 # v2 僅保留三層模型：ROUTER → MEDIUM → LARGE → EMBEDDING
@@ -100,12 +100,22 @@ ROUTER_MODEL_NAME = "qwen3.5:9b"
 MEDIUM_MODEL_NAME = "qwen3.5:9b"
 LARGE_MODEL_NAME = "qwen3.6:35b-a3b"
 EMBEDDING_MODEL_NAME = "bge-m3"
+
+# Role constants for model resolution
+MODEL_LARGE = "large"
+MODEL_MEDIUM = "medium"
+MODEL_EMBEDDING = "embedding"
 MODEL_BASE_URL = "http://localhost:11434"
 
-LARGE_MODEL_MODE = "local"   # local | api | disabled
-LARGE_MODEL_API_KEY = ""
-LARGE_MODEL_API_URL = ""
 MAX_RETRIES = 15
+
+# --- Cloud API ---
+CLOUD_API_KEY = ""
+CLOUD_MODEL_NAME = "nvidia_nim/deepseek-ai/deepseek-v4-flash"
+CLOUD_MEDIUM_MODEL_NAME = ""
+
+# --- LLM Mode ---
+LLM_MODE = "local"   # "local" | "cloud" | "hybrid"
 
 # --- Temperature ---
 TEMPERATURE = 0.7
@@ -135,7 +145,7 @@ DISASSEMBLY_THINK = True
 STEP_THINK = False
 STEP_EXECUTE_THINK = False
 INTEGRATION_THINK = False
-TOOL_EXECUTION_THINK = True
+TOOL_EXECUTION_THINK = False
 AGENTIC_THINK = False
 
 # --- Threshold ---

@@ -124,7 +124,7 @@ class Disassembler:
         try:
             result = await asyncio.wait_for(
                 self.call_model_func(
-                    config.LARGE_MODEL_NAME,
+                    config.MODEL_LARGE,
                     messages,
                     config.DISASSEMBLY_TEMPERATURE,
                     config.DISASSEMBLY_MAX_TOKENS,

@@ -96,7 +96,7 @@ class Executor:
             try:
                 result = await asyncio.wait_for(
                     self.call_model_func(
-                        config.MEDIUM_MODEL_NAME,
+                        config.MODEL_MEDIUM,
                         conversation,
                         config.STEP_EXECUTE_TEMPERATURE,
                         config.STEP_EXECUTE_MAX_TOKENS,

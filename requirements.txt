@@ -2,6 +2,7 @@
  
 # LLM
 ollama
+litellm
  
 # Memory - Vector Store
 chromadb

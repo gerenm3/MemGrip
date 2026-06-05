@@ -188,6 +188,10 @@ class Orchestrator:
         Returns:
             回覆字串
         """
+        if not route_result.success:
+            logger.warning("[Orchestrator] route_result.success=False, error=%s", route_result.error)
+            return "路由失敗，無法處理您的請求。"
+
         route_data = route_result.data
         intent = route_data.get("intent", "simple")
         need_rag = route_data.get("need_rag", False)
