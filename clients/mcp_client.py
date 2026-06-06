@@ -97,6 +97,7 @@ class MCPClient:
         Returns:
             工具執行結果字串
         """
+        print(f"[DEBUG] call_tool called: server={server_name}, tool={tool_name}")
         adapter = self._get_adapter(server_name)
         if not adapter:
             return f"[Error] 未知的 server：{server_name}"
@@ -110,10 +111,16 @@ class MCPClient:
                         await session.initialize()
                         result = await session.call_tool(tool_name, tool_args)
 
+                        print(f"[DEBUG] result.content count={len(result.content)}")
+                        for i, c in enumerate(result.content):
+                            print(f"[DEBUG] content[{i}]:", str(c)[:300])
+
                         logger.debug("[MCP call_tool] tool=%s, args=%s, result=%s", tool_name, tool_args, result)
 
                         if result.content:
-                            text = _get_content_text(result.content[0])
+                            # 合併所有 content 項目（搜尋工具返回多個結果時特別重要）
+                            texts = [_get_content_text(item) for item in result.content]
+                            text = "\n".join(texts)
                             if getattr(result, 'isError', False):
                                 return f"[TOOL_ERROR] {text}"
                             return text

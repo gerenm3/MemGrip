@@ -100,6 +100,8 @@ class Router:
                 logger.warning("[Router._pattern_match] 無效 regex 已跳過: %s (%s)", p["regex"], e)
         if not matched:
             return None
+        log_action("router", "pattern_match", "OK",
+                   f"intent={matched[0].get('intent')} domain={matched[0].get('domain')}")
         return {
             "intent": matched[0].get("intent", "simple"),
             "need_rag": matched[0].get("need_rag", False),
@@ -160,6 +162,7 @@ class Router:
             data["need_rag"] = data.get("need_rag", False)
             data["domain"] = data.get("domain", "general")
             log_action("router", "route_success", "OK", intent)
+            log_action("router", "llm_route_result", "OK", intent)
             return result
 
         log_action("router", "route_failed", "DEGRADED", "LLM routing failed after retries", "路由失敗")
@@ -196,6 +199,7 @@ class Router:
 
         extracted = self._extract_server_name(probe_content)
         if extracted:
+            log_action("router", "probe_result", "OK", f"server={extracted}")
             return Result(success=True, data={"server": extracted})
         return Result(success=False, error="LLM returned empty server name")
 

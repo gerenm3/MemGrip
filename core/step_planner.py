@@ -27,7 +27,7 @@ id：步驟編號
 content：此步驟的具體目標，只描述這一步要做什麼，不包含整個單元的目標
 expected_input：此步驟需要的輸入（語意描述）
 expected_output：此步驟產出的結果（語意描述）
-tools：使用的工具函數名稱；純推理步驟為 null
+tools：使用的工具函數名稱（**純字串**，如 `"brave_web_search"`）；純推理步驟為 `null`。**禁止使用列表格式**。
 depends_on：必須先完成的步驟 id 列表
 upstream_depends：從上方 ## 上游單元 中選取此步驟真正需要的純數字 unit id（如 [1, 2]），禁止使用 "unit:X" 等標記格式；不需要則填 []
 output_type：INTERNAL / GLOBAL。被後續步驟依賴的為 INTERNAL；作為此單元最終輸出的為 GLOBAL。至少一個 GLOBAL。
@@ -37,7 +37,7 @@ output_type：INTERNAL / GLOBAL。被後續步驟依賴的為 INTERNAL；作為�
     "content": "步驟描述",
     "expected_input": "輸入描述",
     "expected_output": "輸出描述",
-    "tools": "tool_function_name 或 null",
+    "tools": "tool_function_name",
     "depends_on": [],
     "upstream_depends": [],
     "output_type": "INTERNAL"
@@ -195,6 +195,16 @@ class StepPlanner:
             if not isinstance(s, dict):
                 continue
             tool_name = s.get("tools")
+
+            # 型別檢查：確保 tool_name 是 str 或 None，忽略列表等無效格式
+            if not isinstance(tool_name, (str, type(None))):
+                if tool_name is not None:
+                    logger.warning(
+                        "[StepPlanner] tools 欄位格式異常 (期望 str 或 null, 得到 %s): step_id=%s",
+                        type(tool_name).__name__, s.get("id", "?")
+                    )
+                tool_name = None
+
             tool = tool_map.get(tool_name) if tool_name else None
             if tool_name and tool is None:
                 logger.warning(

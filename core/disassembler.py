@@ -150,6 +150,9 @@ class Disassembler:
             logger.warning("[Disassembler] 解析結果為空")
             return Result(success=False, error="任務拆解結果為空")
 
+        unit_ids = [u.unit_id for u in units]
+        log_action("disassembler", "units_parsed", "OK",
+                   f"count={len(units)} ids={','.join(unit_ids)}")
         log_action("disassembler", "disassemble_success", "OK", str(len(units)))
         return Result(success=True, data=units)
 

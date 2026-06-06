@@ -28,14 +28,13 @@ async def run_task_mode(orchestrator, task: str) -> None:
     # 初始化工具
     await orchestrator.tool_manager._init_tools()
 
-    # 建立 session
-    session_id = new_session()
-    orchestrator._session_id = session_id
-
     # 初始化 storage（與 orchestrator.run() 一致）
     from core.storage import UnitStore, StepStore
     orchestrator._unit_store = UnitStore()
     orchestrator._step_store = StepStore()
+
+    # 建立 session（同時建立 _unit_runner 和 clarification_manager）
+    session_id = orchestrator._new_session()
 
     # 路由
     route_result = await orchestrator.router.route(task)

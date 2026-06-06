@@ -120,8 +120,13 @@ async def build_orchestrator() -> Orchestrator:
     # Executor 需要 execute_tool_func: (tool_name, tool_args) -> Result
     # 這裡傳入一個 wrapper，因為 ToolManager.execute_tool 需要 server_name
     async def execute_tool(tool_name: str, tool_args: dict):
-        # 預設使用第一個可用的 server
-        return await tool_manager.execute_tool("file_rw", tool_name, tool_args)
+        # 動態查找 tool_name 對應的 server（避免硬編碼）
+        server_name = tool_manager.tool_registry.get(tool_name)
+        if not server_name:
+            logger.error("[bootstrap] 找不到工具 %s 對應的 server", tool_name)
+            from models.blueprints import Result as BlueprintResult
+            return BlueprintResult(success=False, error=f"找不到工具 {tool_name} 對應的 server")
+        return await tool_manager.execute_tool(server_name, tool_name, tool_args)
     executor = Executor(call_model_func=call_model, execute_tool_func=execute_tool)
     verifier = Verifier(call_model_func=call_model)
     responder = Responder(call_model_func=call_model)

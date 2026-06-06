@@ -179,7 +179,7 @@ class ToolManager:
             model, messages,
             getattr(config, 'TOOL_EXECUTION_TEMPERATURE', DEFAULT_TOOL_EXECUTION_TEMPERATURE),
             getattr(config, 'TOOL_EXECUTION_MAX_TOKENS', DEFAULT_TOOL_EXECUTION_MAX_TOKENS),
-            getattr(config, 'TOOL_EXECUTION_THINK', True),
+            getattr(config, 'TOOL_EXECUTION_THINK', False),
             tools or None,
             caller=caller,
         )

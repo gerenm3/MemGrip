@@ -7,6 +7,7 @@
 - 所有 LLM 邏輯轉發給 summarizer
 """
 
+import asyncio
 import logging
 import time
 from typing import Any, Awaitable, Callable, Dict, List, Optional
@@ -53,6 +54,11 @@ class MemoryManager:
 
         # repair_consistency 計數器
         self._flush_count: int = 0
+
+        # idle 監控（由 watchdog 管理，orchestrator 透過 on_activity() 重置）
+        self._last_activity: float = time.time()
+        self._idle_threshold: float = 300.0
+        self._idle_task: asyncio.Task | None = None
 
     # ------------------------------------------------------------------ #
     #  公開 API
@@ -275,15 +281,13 @@ class MemoryManager:
     # ------------------------------------------------------------------ #
 
     async def _batch_summarize_if_needed(self) -> None:
-        """若 TempCache 達閾值，觸發批量摘要"""
+        """若 TempCache token 達閾值，觸發批量摘要（idle 觸發由 watchdog 負責）"""
         if not self.temp_cache:
             return
 
-        idle_seconds = time.time() - self.last_batch_time
-        idle_expired = idle_seconds >= config.TEMP_CACHE_IDLE_SECONDS
         token_exceeded = self.temp_cache.total_tokens() >= config.TEMP_CACHE_FORCE_TOKENS
 
-        if not (idle_expired or token_exceeded):
+        if not token_exceeded:
             return
 
         items = self.temp_cache.get_top_k(config.TEMP_CACHE_TOP_K)
@@ -318,3 +322,20 @@ class MemoryManager:
                         self.temp_cache.remove(item["id"])
 
         self.last_batch_time = time.time()
+
+    # ------------------------------------------------------------------ #
+    #  Idle 監控（watchdog）
+    # ------------------------------------------------------------------ #
+
+    def on_activity(self) -> None:
+        """Orchestrator 每次收到 user input 時呼叫，重置 idle 計時。"""
+        self._last_activity = time.time()
+
+    async def start_idle_watchdog(self) -> None:
+        """啟動 idle 監控，idle 超過閾值時觸發 batch summarize。"""
+        while True:
+            await asyncio.sleep(60)  # 每分鐘檢查一次
+            elapsed = time.time() - self._last_activity
+            if elapsed >= self._idle_threshold:
+                logger.info("[memory] idle %.0fs，觸發 batch summarize", elapsed)
+                await self._batch_summarize_if_needed()

@@ -101,9 +101,14 @@ class Orchestrator:
 
     async def run(self) -> None:
         """主循環：持续接收用戶輸入並_dispatch。"""
+        # 啟動 idle watchdog
+        asyncio.create_task(self.memory.start_idle_watchdog())
         while True:
             try:
-                user_input = input("\nYou: ").strip()
+                loop = asyncio.get_event_loop()
+                user_input = await loop.run_in_executor(None, lambda: input("\nYou: ").strip())
+                # 重置 idle 計時
+                self.memory.on_activity()
                 if not user_input:
                     continue
 
@@ -197,6 +202,7 @@ class Orchestrator:
         need_rag = route_data.get("need_rag", False)
         domain = route_data.get("domain", "general")
         log_action("orchestrator", "dispatch", "OK", intent)
+        log_action("orchestrator", "pipeline_start", "OK", f"intent={intent} domain={domain}")
 
         # 準備 RAG
         rag = ""
@@ -527,6 +533,12 @@ class Orchestrator:
                 )
                 t.add_done_callback(_on_optimizer_done)
                 self._background_tasks.add(t)
+
+        # 計算 unit 總數與成功數
+        total_units = len(all_unit_results)
+        success_units = sum(1 for r in all_unit_results if r.status == UnitStatus.SUCCESS)
+        log_action("orchestrator", "pipeline_complete", "OK",
+                   f"complex total={total_units} success={success_units}")
 
         return reply
 

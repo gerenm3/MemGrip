@@ -6,6 +6,7 @@
 import json
 import logging
 import random
+import time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -15,6 +16,7 @@ from clients.model_client import call_model
 from core.json_utils import parse_first_json
 from skills.skill_manager import SkillManager
 from skills.trace_reader import build_execution_record
+from core.health import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +70,7 @@ def collect(session_id: str, task_type: str, task_record: dict | None = None) ->
         "task_type": task_type,
         "skill_version": skill_version,
         "ts": datetime.now(timezone(TZ_TAIPEI)).isoformat(),
+        "timestamp": time.time(),
         # 聚合指標
         "unit_count": execution_data.get("unit_count", 0),
         "replan_count": execution_data.get("replan_count", 0),
@@ -135,6 +138,10 @@ def evaluate_layer3(
 
     triggered = is_anomaly or is_random
     trigger_reason = "anomaly" if is_anomaly else "random_audit"
+
+    if triggered:
+        log_action("signal_collector", "signal_triggered", "OK",
+                   f"session={session_id} reason={trigger_reason} replan={replan_count} failed={failed_units} verifier={verifier_pass_ratio:.2f}")
 
     if not triggered:
         logger.debug(
@@ -329,6 +336,10 @@ def _parse_layer3_response(text: str, unit_id: str) -> Optional[dict]:
         parsed = parse_first_json(text)
     except (json.JSONDecodeError, ValueError):
         logger.warning("[layer3] 無法解析 unit=%s 的評估結果", unit_id)
+        return None
+
+    if parsed is None:
+        logger.warning("[layer3] unit=%s 的評估結果為空", unit_id)
         return None
 
     # 驗證必要欄位

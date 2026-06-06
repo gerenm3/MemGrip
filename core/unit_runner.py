@@ -68,6 +68,8 @@ class UnitRunner:
         while replan_count <= max_replan:
             if replan_count > 0:
                 logger.info("[UnitRunner] replan unit=%s attempt=%d", unit.unit_id, replan_count)
+                log_action("orchestrator", "replan_trigger", "DEGRADED",
+                           f"{unit.unit_id} attempt={replan_count}", "單元需要重新規劃")
                 log_action("orchestrator", "replan", "OK", f"{unit.unit_id} attempt={replan_count}")
 
             # 驗證 Steps 合法性
@@ -203,6 +205,8 @@ class UnitRunner:
                 output = self._collect_actual_output(unit.unit_id)
                 self._step_store.clear_unit_steps(self._session_id, unit.unit_id)
                 total_loop_count = sum(step_loop_counts.values())
+                log_action("orchestrator", "unit_complete", "OK",
+                           f"{unit.unit_id} status=SUCCESS output_type={unit.output_type}")
                 return UnitResult(
                     unit_id=unit.unit_id,
                     status=UnitStatus.SUCCESS,
@@ -218,6 +222,8 @@ class UnitRunner:
             if replan_count > max_replan:
                 logger.warning("[UnitRunner] unit=%s 超過 replan 上限", unit.unit_id)
                 log_action("orchestrator", "replan_exhausted", "FAILED", unit.unit_id, "重規劃次數已達上限")
+                log_action("orchestrator", "unit_complete", "OK",
+                           f"{unit.unit_id} status=FAILED output_type={unit.output_type}")
                 self._step_store.clear_unit_steps(self._session_id, unit.unit_id)
                 total_loop_count = sum(step_loop_counts.values())
                 return UnitResult(

@@ -10,6 +10,7 @@
 
 import json
 import logging
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -18,6 +19,7 @@ from clients.model_client import call_model
 from core.json_utils import parse_first_json
 from models.blueprints import Result
 from skills.skill_manager import SkillManager
+from core.health import log_action
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +31,12 @@ CONSTRAINT_SATISFIED_RATIO_THRESHOLD = 0.7
 
 # Default constants
 DEFAULT_VERIFY_TEMPERATURE = 0
+
+# Cooldown
+OPTIMIZER_COOLDOWN_SEC = 3600
+
+# Signal age filter
+SIGNAL_MAX_AGE_SEC = 86400 * 7  # 7天
 
 
 class Optimizer:
@@ -42,6 +50,7 @@ class Optimizer:
 
     def __init__(self) -> None:
         self._skill_manager = SkillManager()
+        self.last_optimizer_run: float | None = None
 
     async def run_optimizer(
         self,
@@ -60,6 +69,13 @@ class Optimizer:
             Result(data={"dimension_map": dict, "update_result": dict})
         """
         try:
+            # Cooldown check
+            if self.last_optimizer_run is not None:
+                elapsed = time.time() - self.last_optimizer_run
+                if elapsed < self.OPTIMIZER_COOLDOWN_SEC:
+                    logger.debug("Optimizer cooldown: %.0fs remaining", self.OPTIMIZER_COOLDOWN_SEC - elapsed)
+                    return Result(success=True, data={"dimension_map": {}, "update_result": {}, "cooled_down": True})
+
             logger.info(
                 "[optimizer] start: session=%s, task_type=%s, level=%s",
                 session_id, task_type, level,
@@ -81,6 +97,9 @@ class Optimizer:
             # 載入當前 skill
             current_skills = self._skill_manager.load_skill(task_type, level)
 
+            # 取快照（用於 verify 失敗時回滾）
+            snapshot = self._skill_manager.take_snapshot(task_type, level)
+
             # Step 2: 更新 skill
             update_result = await self._update_skills(
                 dimension_map, current_skills, task_type, level
@@ -94,7 +113,10 @@ class Optimizer:
             # Step 3: 驗證
             passed = await self._verify(update_result, dimension_map, current_skills)
             if not passed:
-                logger.warning("[optimizer] verify 未通過，不寫入 skill")
+                logger.warning("[optimizer] verify 未通過，回滾至更新前的 skill guide")
+                log_action("optimizer", "optimizer_rollback", "DEGRADED",
+                           f"task_type={task_type} level={level}")
+                self._skill_manager.rollback_to(task_type, level, snapshot)
                 return Result(
                     success=True,
                     data={
@@ -116,6 +138,9 @@ class Optimizer:
                 "[optimizer] skill updated: task_type=%s, level=%s, dims=%s",
                 task_type, level, list(updated.keys()),
             )
+
+            # Update cooldown timer on success
+            self.last_optimizer_run = time.time()
 
             return Result(
                 success=True,
@@ -163,6 +188,16 @@ class Optimizer:
                 if sig.get("task_type") == task_type:
                     signals.append(sig)
 
+        # 過濾超過 7 天的舊 signal
+        fresh_signals = [
+            s for s in signals
+            if time.time() - s.get("timestamp", 0) < SIGNAL_MAX_AGE_SEC
+        ]
+        if not fresh_signals:
+            logger.info("[optimizer] 無 %s 有效信號資料（已過濾超過 7 天的 signal）", task_type)
+            return None
+        signals = fresh_signals
+
         if not signals:
             logger.info("[optimizer] 無 %s 信號資料", task_type)
             return None
@@ -176,6 +211,9 @@ class Optimizer:
         if not abnormal_dims:
             logger.info("[optimizer] 無異常維度，不需要優化")
             return None
+
+        log_action("optimizer", "abnormal_dims", "OK",
+                   f"task_type={task_type} level={level} dims={','.join(abnormal_dims)}")
 
         # LLM 映射到五維度
         dimension_map = await self._llm_map_dimensions(signals, stats, abnormal_dims)

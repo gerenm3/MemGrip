@@ -92,6 +92,7 @@ class Executor:
 
         for _ in range(max_iterations):
             loop_count += 1
+            log_action("executor", "loop_iteration", "OK", f"step={step.step_id} iteration={loop_count}")
 
             try:
                 result = await asyncio.wait_for(
@@ -131,6 +132,8 @@ class Executor:
                     t_name = parsed["name"]
                     t_args = self._parse_tool_arguments(parsed["arguments"])
 
+                    log_action("executor", "tool_call_start", "OK", f"step={step.step_id} tool={t_name}")
+
                     assistant_msg: dict = {
                         "role": "assistant",
                         "content": content or "",
@@ -141,6 +144,9 @@ class Executor:
                     if tool_result:
                         if not getattr(tool_result, 'success', True):
                             tool_errors.append(f"工具 {t_name} 失敗: {getattr(tool_result, 'error', '未知錯誤')}")
+                            log_action("executor", "tool_call_complete", "FAILED", f"step={step.step_id} tool={t_name}")
+                        else:
+                            log_action("executor", "tool_call_complete", "OK", f"step={step.step_id} tool={t_name}")
                         content_str = tool_result.data if hasattr(tool_result, 'data') else str(tool_result)
                         successful_tool_results.append(f"[{t_name}]\n{content_str}")
 
@@ -159,7 +165,12 @@ class Executor:
             if tool_errors:
                 error_parts.append("工具錯誤：" + "; ".join(tool_errors))
             log_action("executor", "step_failed", "FAILED", step.step_id + ": 工具執行錯誤", "Agentic loop 達上限")
+            log_action("executor", "loop_limit_reached", "DEGRADED", f"step={step.step_id} count={loop_count}")
             return Result(success=False, error="\n".join(error_parts) or "執行達上限")
+
+        # 檢查是否達到迭代上限（無錯誤正常結束）
+        if loop_count >= max_iterations:
+            log_action("executor", "loop_limit_reached", "DEGRADED", f"step={step.step_id} count={loop_count}")
 
         # 組合最終輸出
         output = content

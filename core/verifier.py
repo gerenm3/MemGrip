@@ -91,6 +91,9 @@ class Verifier:
             if passed:
                 log_action("verifier", "verify_passed", "OK", unit.unit_id)
             else:
+                gap_detail = str(gaps)[:100] if gaps else ""
+                log_action("verifier", "verify_gaps", "DEGRADED",
+                           f"{unit.unit_id}: gaps={len(gaps)} detail={gap_detail}", "單元驗證未通過")
                 log_action("verifier", "verify_failed", "DEGRADED",
                            f"{unit.unit_id}: gaps={len(gaps)}", "單元驗證未通過")
             return Result(success=True, data=parsed)

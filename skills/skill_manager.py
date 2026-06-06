@@ -145,6 +145,17 @@ class SkillManager:
 
         return "\n\n".join(segments)
 
+    def take_snapshot(self, task_type: str, level: str) -> dict:
+        """回傳 skill guide 的深複製快照。"""
+        import copy
+        return copy.deepcopy(self.load_skill(task_type, level))
+
+    def rollback_to(self, task_type: str, level: str, snapshot: dict) -> None:
+        """將 skill guide 回滾至指定快照，並同步持久化。"""
+        import copy
+        self.save_skill(task_type, copy.deepcopy(snapshot), level)
+        self.save_history(task_type, {"rollback": True}, {}, level)
+
     def build_prompt(self, domain: str, level: str = "l1") -> str:
         """建構 domain prompt：domain → Skill Guide → fallback global → 空字串."""
         try:
