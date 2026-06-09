@@ -312,7 +312,7 @@ class Orchestrator:
         )
 
         # Responder 回覆
-        reply_result = self.responder.reply_tool(
+        reply_result = await self.responder.reply_tool(
             agentic_loop_output=loop_result.data or "",
             user_input=user_input,
         )
