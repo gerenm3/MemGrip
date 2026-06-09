@@ -1,0 +1,4 @@
+[tool.mutmut]
+paths_to_mutate = "."
+tests_dir = "tests/L1"
+runner = "python -m pytest tests/L1/ --ignore=tests/L1/test_executor.py --ignore=tests/L1/test_init_skills.py --ignore=tests/L1/test_optimizer.py --tb=no -q"

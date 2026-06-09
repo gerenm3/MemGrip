@@ -51,20 +51,33 @@ class Clarifier:
         依據 §3.2：buffer/summary/rag 由 Orchestrator 準備後作為參數傳入。
         """
         try:
-            parsed = await self._clarify(user_input, buffer_text, summary_text)
+            parsed, llm_succeeded, last_error = await self._clarify(user_input, buffer_text, summary_text)
+            if not llm_succeeded:
+                log_action("clarifier", "clarify_retry_exhausted", "DEGRADED", "3 attempts failed", "無法解析您的輸入")
+                return Result(success=False, data=parsed, error=last_error or "所有 LLM 呼叫失敗")
             log_action("clarifier", "clarify_done", "OK", f"goal={parsed.get('goal', '')}, constraints={len(parsed.get('constraints', []))}")
             return Result(success=True, data=parsed, error="")
         except Exception as e:
             log_action("clarifier", "clarify_retry_exhausted", "DEGRADED", str(e), "無法解析您的輸入")
             return Result(success=False, data=None, error=str(e))
     
-    async def _clarify(self, user_input: str, buffer_text: str = "", summary_text: str = "") -> dict:
-        """Clarify：將 user_input 轉成結構化欄位（含 retry 機制）"""
+    async def _clarify(self, user_input: str, buffer_text: str = "", summary_text: str = "") -> tuple[dict, bool, str]:
+        """Clarify：將 user_input 轉成結構化欄位（含 retry 機制）
+        
+        Returns:
+            (parsed_dict, llm_succeeded, last_error): 解析結果、是否有任何 LLM 呼叫成功、最後一次 LLM error
+        """
+        if not buffer_text and hasattr(self.buffer, 'get'):
+            buffer_text = self.buffer.get() or ""
+        if not summary_text and hasattr(self.summary, 'get_summary'):
+            summary_text = self.summary.get_summary() or ""
         input_text = self._format_input(buffer_text, summary_text, user_input)
 
         messages = MessageBuilder.build_task(CLARIFY_PROMPT, input_text)
         
         max_attempts = MAX_CLARIFY_ATTEMPTS
+        llm_succeeded = False
+        last_error = ""
         for attempt in range(max_attempts):
             try:
                 result = await asyncio.wait_for(
@@ -81,26 +94,30 @@ class Clarifier:
                 if not result.success:
                     logger.error("Clarifier LLM call failed: %s", result.error)
                     log_action("clarifier", "llm_call_failed", "DEGRADED", result.error, "LLM 呼叫失敗")
+                    last_error = result.error or last_error
                     continue
+                llm_succeeded = True
                 content = result.data
             except asyncio.TimeoutError as e:
                 logger.error("Clarifier LLM call timeout: %s", e)
                 log_action("clarifier", "llm_call_timeout", "DEGRADED", str(e), "LLM 呼叫超時")
+                last_error = str(e) or last_error
                 continue
             except Exception as e:
                 logger.error("Clarifier LLM call failed: %s", e)
                 log_action("clarifier", "llm_call_failed", "DEGRADED", str(e), "LLM 呼叫失敗")
+                last_error = str(e) or last_error
                 continue
 
             parsed = self._parse_json_response(content)
             if parsed:
                 log_action("clarifier", "clarify_success", "OK")
-                return parsed
+                return parsed, True, ""
         
         # 3 次解析都失敗，回傳含 questions 的結構讓 orchestrator 向用戶提問
         log_action("clarifier", "clarify_retry_exhausted", "DEGRADED", "3 attempts failed", "無法解析您的輸入")
-        return {
-            "goal": "",
+        fallback = {
+            "goal": user_input,
             "entities": [],
             "scope": "",
             "constraints": [],
@@ -108,6 +125,7 @@ class Clarifier:
             "success_criteria": [],
             "questions": ["您的需求描述不够清楚，能否重新说明您想要完成的任务？"]
         }
+        return fallback, llm_succeeded, last_error
 
     def _format_input(self, buffer_text: str, summary_text: str, user_input: str) -> str:
         """格式化輸入文字"""

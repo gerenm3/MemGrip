@@ -9,7 +9,6 @@ from skills.skill_manager import SkillManager
 
 logger = logging.getLogger(__name__)
 
-
 _DEFAULT_SKILL = {
     "reasoning_resolution": {
         "core_concept": "根據任務複雜度調整推論的深度",
@@ -70,11 +69,17 @@ def _write_default_skill(task_type: str, level: str) -> None:
 
 
 def _build_dimensions_text(dimensions: dict | list = None) -> str:
-    """從 config.SKILL_DIMENSIONS 動態生成五個維度定義字串。"""
+    """從 config.SKILL_DIMENSIONS 動態生成五個維度定義字串。
+
+    DEF-002 修正：當 dim_dict 為空 dict 時回傳空字串。
+    """
     if isinstance(dimensions, list):
         dim_dict = {k: config.SKILL_DIMENSIONS[k] for k in dimensions if k in config.SKILL_DIMENSIONS}
     else:
         dim_dict = dimensions or config.SKILL_DIMENSIONS
+
+    if not dim_dict:
+        return ""
 
     lines = ["五個維度定義："]
     for idx, (key, dim) in enumerate(dim_dict.items(), start=1):

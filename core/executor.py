@@ -258,9 +258,16 @@ class Executor:
 
     @staticmethod
     def _format_tool_call(tc: Any) -> Optional[dict]:
-        """將 tool_call 轉換為統一的 {name, arguments} 格式."""
+        """將 tool_call 轉換為統一的 {name, arguments} 格式.
+        
+        DEF-001 修正：tc.function 或 func.name 為 None 時回傳 None。
+        """
         if hasattr(tc, "function"):
             func = tc.function
+            if func is None:
+                return None
+            if func.name is None:
+                return None
             return {"name": func.name, "arguments": func.arguments}
         if isinstance(tc, dict):
             formatted = {

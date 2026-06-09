@@ -127,6 +127,9 @@ class Router:
             logger.error("[Router._call_llm] LLM 呼叫失敗: %s", e, exc_info=True)
             return Result(success=False, error=str(e))
 
+        if not result.success:
+            return Result(success=False, error=result.error)
+
         content = result.data or ""
         parsed = parse_first_json(content)
         if parsed is None or not isinstance(parsed, dict):
@@ -147,18 +150,20 @@ class Router:
             log_action("router", "route", "OK", f"intent={data.get('intent')}, domain={data.get('domain')}, need_rag={data.get('need_rag')}")
             return Result(success=True, data=data)
 
+        last_error = "route 重試後仍失敗"
         for attempt in range(_max_attempts):
             try:
                 result = await self._call_llm(ROUTE_PROMPT, user_input, caller="router")
             except Exception as e:
                 result = Result(success=False, error=str(e))
             if result is None or not result.success:
+                last_error = result.error if result and result.error else last_error
                 continue
             data = result.data
             valid, intent = self._validate_intent(data.get("intent", "simple"))
             if not valid:
-                logger.warning("[Router.route] 驗證失敗，intent=%s，不進入重試", intent)
-                return Result(success=False, error=f"invalid intent: {intent}")
+                logger.warning("[Router.route] 驗證失敗，intent=%s，進入重試", intent)
+                continue
             data["need_rag"] = data.get("need_rag", False)
             data["domain"] = data.get("domain", "general")
             log_action("router", "route_success", "OK", intent)
@@ -166,7 +171,7 @@ class Router:
             return result
 
         log_action("router", "route_failed", "DEGRADED", "LLM routing failed after retries", "路由失敗")
-        return Result(success=False, error="route 重試後仍失敗")
+        return Result(success=False, error=last_error)
 
     async def probe_server(self, goal: str, server_names: list[str]) -> Result:
         """從 server_names 中挑選最適合的 MCP server"""
@@ -189,7 +194,6 @@ class Router:
                 ),
                 timeout=config.LLM_TIMEOUT,
             )
-            probe_content = probe_result.data or ""
         except asyncio.TimeoutError:
             log_action("router", "probe_server_llm", "DEGRADED", f"timeout={config.LLM_TIMEOUT}s", "無法自動偵測工具")
             return Result(success=False, error=f"LLM 呼叫逾時 ({config.LLM_TIMEOUT}s)")
@@ -197,7 +201,15 @@ class Router:
             log_action("router", "probe_server_llm", "DEGRADED", str(e), "無法自動偵測工具")
             return Result(success=False, error=str(e))
 
-        extracted = self._extract_server_name(probe_content)
+        if not probe_result.success:
+            return Result(success=False, error=probe_result.error)
+
+        probe_content = probe_result.data or ""
+        parsed = parse_first_json(probe_content)
+        if parsed and isinstance(parsed, dict):
+            extracted = parsed.get("server", "")
+        else:
+            extracted = self._extract_server_name(probe_content)
         if extracted:
             log_action("router", "probe_result", "OK", f"server={extracted}")
             return Result(success=True, data={"server": extracted})

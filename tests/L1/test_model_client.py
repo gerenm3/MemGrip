@@ -1,84 +1,128 @@
-"""tests/L1/test_model_client -- 10 筆測試."""
+"""Test plan L1 - ModelClient (#8)
 
-import unittest
+L1 scope (per l1_scope.md): set_global_tracer, resolve_model, get_client
+Excluded: call_model, call_embedding (depend on LLM external service)
+
+Total: 13 test cases (TC-08-01 ~ TC-08-13)
+"""
 
 import pytest
+from unittest.mock import MagicMock, patch
+import config
+from clients.model_client import set_global_tracer, resolve_model, get_client, ModelServiceError
 
+
+# ── set_global_tracer ──────────────────────────────────────────────
+
+class TestSetGlobalTracer:
+    """TC-08-01 ~ TC-08-02"""
+
+    def test_TC_08_01_set_global_tracer_sets_tracer(self):
+        tracer_obj = MagicMock()
+        set_global_tracer(tracer_obj)
+        from clients import model_client
+        assert model_client._global_tracer is tracer_obj
+
+    def test_TC_08_02_set_global_tracer_none(self):
+        set_global_tracer(None)
+        from clients import model_client
+        assert model_client._global_tracer is None
+
+
+# ── resolve_model ──────────────────────────────────────────────
 
 class TestResolveModel:
-    """resolve_model 測試 (1-8)."""
+    """TC-08-03 ~ TC-08-11"""
 
-    def test_resolve_model_local_large(self, mock_config_all_model_names):
-        from clients import model_client
+    def test_TC_08_03_resolve_local_large(self):
+        with patch.object(config, "LLM_MODE", "local"):
+            result = resolve_model("large")
+            assert result == config.LARGE_MODEL_NAME
 
-        result = model_client.resolve_model("large")
-        assert result == "llama3"
+    def test_TC_08_04_resolve_local_medium(self):
+        with patch.object(config, "LLM_MODE", "local"):
+            result = resolve_model("medium")
+            assert result == config.MEDIUM_MODEL_NAME
 
-    def test_resolve_model_local_medium(self, mock_config_all_model_names):
-        from clients import model_client
+    def test_TC_08_05_resolve_local_embedding(self):
+        with patch.object(config, "LLM_MODE", "local"):
+            result = resolve_model("embedding")
+            assert result == config.EMBEDDING_MODEL_NAME
 
-        result = model_client.resolve_model("medium")
-        assert result == "llama3-med"
+    def test_TC_08_06_resolve_cloud_large(self):
+        with patch.object(config, "LLM_MODE", "cloud"):
+            result = resolve_model("large")
+            assert result == config.CLOUD_MODEL_NAME
 
-    def test_resolve_model_local_embedding(self, mock_config_all_model_names):
-        from clients import model_client
+    def test_TC_08_07_resolve_cloud_medium(self):
+        with patch.object(config, "LLM_MODE", "cloud"):
+            result = resolve_model("medium")
+            assert result == config.CLOUD_MEDIUM_MODEL_NAME
 
-        result = model_client.resolve_model("embedding")
-        assert result == "all-minilm"
+    def test_TC_08_08_resolve_hybrid_large(self):
+        with patch.object(config, "LLM_MODE", "hybrid"):
+            result = resolve_model("large")
+            assert result == config.CLOUD_MODEL_NAME
 
-    def test_resolve_model_cloud_large(self):
-        from clients import model_client
+    def test_TC_08_09_resolve_hybrid_medium(self):
+        with patch.object(config, "LLM_MODE", "hybrid"):
+            result = resolve_model("medium")
+            assert result == config.MEDIUM_MODEL_NAME
 
-        with unittest.mock.patch.object(model_client.config, "LLM_MODE", "cloud"):
-            with unittest.mock.patch.object(model_client.config, "CLOUD_MODEL_NAME", "openai/gpt-4"):
-                result = model_client.resolve_model("large")
-                assert result == "openai/gpt-4"
+    def test_TC_08_10_resolve_hybrid_embedding(self):
+        with patch.object(config, "LLM_MODE", "hybrid"):
+            result = resolve_model("embedding")
+            assert result == config.EMBEDDING_MODEL_NAME
 
-    def test_resolve_model_cloud_medium(self):
-        from clients import model_client
+    def test_TC_08_11_resolve_unknown_mode_fallback(self):
+        with patch.object(config, "LLM_MODE", "unknown_mode"):
+            result = resolve_model("large")
+            # Should fallback to local mapping
+            assert result == config.LARGE_MODEL_NAME
 
-        with unittest.mock.patch.object(model_client.config, "LLM_MODE", "cloud"):
-            with unittest.mock.patch.object(model_client.config, "CLOUD_MEDIUM_MODEL_NAME", "openai/gpt-3.5"):
-                result = model_client.resolve_model("medium")
-                assert result == "openai/gpt-3.5"
+    def test_TC_08_12_resolve_invalid_role_raises_key_error(self):
+        with patch.object(config, "LLM_MODE", "local"):
+            with pytest.raises(KeyError):
+                resolve_model("unknown_role")
 
-    def test_resolve_model_hybrid_large(self):
-        from clients import model_client
 
-        with unittest.mock.patch.object(model_client.config, "LLM_MODE", "hybrid"):
-            with unittest.mock.patch.object(model_client.config, "CLOUD_MODEL_NAME", "openai/gpt-4"):
-                result = model_client.resolve_model("large")
-                assert result == "openai/gpt-4"
-
-    def test_resolve_model_hybrid_medium(self):
-        from clients import model_client
-
-        with unittest.mock.patch.object(model_client.config, "LLM_MODE", "hybrid"):
-            with unittest.mock.patch.object(model_client.config, "MEDIUM_MODEL_NAME", "llama3-med"):
-                result = model_client.resolve_model("medium")
-                assert result == "llama3-med"
-
-    def test_resolve_model_unknown_mode_fallback_to_local(self):
-        from clients import model_client
-
-        with unittest.mock.patch.object(model_client.config, "LLM_MODE", "unknown_mode_xyz"):
-            result = model_client.resolve_model("large")
-            assert result == model_client.config.LARGE_MODEL_NAME
-
+# ── get_client ──────────────────────────────────────────────
 
 class TestGetClient:
-    """get_client 測試 (9-10)."""
+    """TC-08-13 ~ TC-08-15 (L1 scope only)"""
 
-    def test_get_client_returns_cloud_when_name_contains_slash(self):
-        from clients import model_client
-        from clients.cloud import CloudClient
+    def test_TC_08_13_get_client_with_slash(self):
+        tracer = MagicMock()
+        with patch("clients.model_client.CloudClient") as MockCloud:
+            MockCloud.return_value = MagicMock()
+            client = get_client("openai/gpt-4", tracer)
+            MockCloud.assert_called_once()
+            call_kwargs = MockCloud.call_args.kwargs
+            assert call_kwargs.get("tracer") is tracer
 
-        client = model_client.get_client("openai/gpt-4")
-        assert isinstance(client, CloudClient)
+    def test_TC_08_14_get_client_without_slash(self):
+        tracer = MagicMock()
+        with patch("clients.model_client.OllamaLocalClient") as MockOllama:
+            MockOllama.return_value = MagicMock()
+            client = get_client("llama-3", tracer)
+            MockOllama.assert_called_once()
+            call_kwargs = MockOllama.call_args.kwargs
+            assert call_kwargs.get("tracer") is tracer
 
-    def test_get_client_returns_ollama_when_no_slash(self):
-        from clients import model_client
-        from clients.ollama import OllamaLocalClient
+    def test_TC_08_15_get_client_tracer_none(self):
+        with patch("clients.model_client.OllamaLocalClient") as MockOllama:
+            MockOllama.return_value = MagicMock()
+            client = get_client("llama-3", None)
+            MockOllama.assert_called_once()
+            call_kwargs = MockOllama.call_args.kwargs
+            assert call_kwargs.get("tracer") is None
 
-        client = model_client.get_client("llama3")
-        assert isinstance(client, OllamaLocalClient)
+
+# ── ModelServiceError ──────────────────────────────────────────────
+
+class TestModelServiceError:
+    """TC-08-16 (L1 scope: verify it's an Exception subclass)"""
+
+    def test_TC_08_16_model_service_error_is_exception(self):
+        e = ModelServiceError("test error")
+        assert isinstance(e, Exception)

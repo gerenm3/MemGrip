@@ -65,7 +65,7 @@ class UnitRunner:
         upstream_outputs: Dict[str, str] = {}
         step_loop_counts: Dict[str, int] = {}  # {step_id: loop_count}
 
-        while replan_count <= max_replan:
+        while replan_count < max_replan:
             if replan_count > 0:
                 logger.info("[UnitRunner] replan unit=%s attempt=%d", unit.unit_id, replan_count)
                 log_action("orchestrator", "replan_trigger", "DEGRADED",
@@ -199,6 +199,14 @@ class UnitRunner:
                                 "gaps": verify_result.data.get("gaps", []),
                                 "constraint_checks": verify_result.data.get("constraint_checks", []),
                             }
+                    elif not verify_result.success:
+                        # DEF-008：verify_result.success=False 時標記失敗
+                        unit_failed = True
+                        failed_step_info = {
+                            "step_id": "",
+                            "goal": unit.goal,
+                            "content": verify_result.error or "驗證失敗",
+                        }
 
             if not unit_failed:
                 # 成功：清空 step_store 後回傳
@@ -245,6 +253,9 @@ class UnitRunner:
             # 呼叫 replan callback
             if replan_callback:
                 new_steps = await replan_callback(failed_step_info, successful_steps)
+                # DEF-009：replan_callback 回傳 None 時視為無新 steps
+                if new_steps is None:
+                    new_steps = []
                 # 合併邏輯：新 steps 優先，已成功的 steps 補充不存在的 id
                 existing = {str(s.step_id): s for s in new_steps}
                 for s in successful_steps:

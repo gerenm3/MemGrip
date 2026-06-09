@@ -138,6 +138,10 @@ class MemoryManager:
             top_k: 取回筆數
             min_similarity: 最低相似度閾值，預設 0.5
         """
+        # DEF-016：top_k=0 時直接回傳空字串
+        if top_k <= 0:
+            return ""
+
         if not self.call_embedding_func or not self.vector_store:
             return ""
 
@@ -159,6 +163,8 @@ class MemoryManager:
             return ""
 
         first_result = search_results[0]
+        if isinstance(first_result, dict):
+            return first_result.get("raw", "")
         return first_result if first_result else ""
 
     # ------------------------------------------------------------------ #

@@ -1,0 +1,136 @@
+"""L1 測試 - Tracer (#20)
+
+測試範圍：_mask_messages
+依據：docs/test_plan_l1/20_tracer.md
+"""
+
+import hashlib
+import pytest
+
+
+class TestTracer:
+
+    @pytest.mark.asyncio
+    async def test_TC20_01___mask_messages_無system_role(self):
+        """TC-20-01: _mask_messages - 無 system role"""
+        from core.tracer import Tracer
+        messages = [{"role": "user", "content": "Hello"}, {"role": "assistant", "content": "Hi"}]
+        result = Tracer._mask_messages(messages)
+        assert result == messages
+        assert result[0]["role"] == "user"
+        assert result[0]["content"] == "Hello"
+        assert result[1]["role"] == "assistant"
+        assert result[1]["content"] == "Hi"
+
+    @pytest.mark.asyncio
+    async def test_TC20_02___mask_messages_system_role_content為空(self):
+        """TC-20-02: _mask_messages - system role content 為空"""
+        from core.tracer import Tracer
+        messages = [{"role": "system", "content": ""}]
+        result = Tracer._mask_messages(messages)
+        assert result[0]["role"] == "system"
+        assert result[0]["content"] == "MASKED (length=0)"
+
+    @pytest.mark.asyncio
+    async def test_TC20_03___mask_messages_system_role_content長度等於100(self):
+        """TC-20-03: _mask_messages - system role content 長度 <= 100 (正好 100 字元)"""
+        from core.tracer import Tracer
+        content = "A" * 100
+        messages = [{"role": "system", "content": content}]
+        result = Tracer._mask_messages(messages)
+        expected_md5 = hashlib.md5(content.encode()).hexdigest()
+        expected = content + "[MD5: " + expected_md5 + "]"
+        assert result[0]["content"] == expected
+
+    @pytest.mark.asyncio
+    async def test_TC20_04___mask_messages_system_role_content長度大於100(self):
+        """TC-20-04: _mask_messages - system role content 長度 > 100"""
+        from core.tracer import Tracer
+        content = "A" * 200
+        messages = [{"role": "system", "content": content}]
+        result = Tracer._mask_messages(messages)
+        expected_md5 = hashlib.md5(content.encode()).hexdigest()
+        expected = content[:100] + "[MD5: " + expected_md5 + "]"
+        assert result[0]["content"] == expected
+
+    @pytest.mark.asyncio
+    async def test_TC20_05___mask_messages_system_role_content長度等於101(self):
+        """TC-20-05: _mask_messages - system role content 長度 = 101"""
+        from core.tracer import Tracer
+        content = "A" * 101
+        messages = [{"role": "system", "content": content}]
+        result = Tracer._mask_messages(messages)
+        expected_md5 = hashlib.md5(content.encode()).hexdigest()
+        expected = content[:100] + "[MD5: " + expected_md5 + "]"
+        assert result[0]["content"] == expected
+
+    @pytest.mark.asyncio
+    async def test_TC20_06___mask_messages多個system_role(self):
+        """TC-20-06: _mask_messages - 多個 system role"""
+        from core.tracer import Tracer
+        messages = [
+            {"role": "system", "content": "S1"},
+            {"role": "user", "content": "U"},
+            {"role": "system", "content": "S2"}
+        ]
+        result = Tracer._mask_messages(messages)
+        # 所有 system role 都脫敏
+        assert "MASKED" in result[0]["content"] or "MD5:" in result[0]["content"]
+        assert "MASKED" in result[2]["content"] or "MD5:" in result[2]["content"]
+        # user role 不變
+        assert result[1]["content"] == "U"
+
+    @pytest.mark.asyncio
+    async def test_TC20_07___mask_messages_messages為空(self):
+        """TC-20-07: _mask_messages - messages 為空"""
+        from core.tracer import Tracer
+        result = Tracer._mask_messages([])
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_TC20_08___mask_messages_messages為None(self):
+        """TC-20-08: _mask_messages - messages 為 None"""
+        from core.tracer import Tracer
+        result = Tracer._mask_messages(None)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_TC20_09___mask_messages_MD5正確性(self):
+        """TC-20-09: _mask_messages - MD5 正確性"""
+        from core.tracer import Tracer
+        content = "test system prompt"
+        messages = [{"role": "system", "content": content}]
+        result = Tracer._mask_messages(messages)
+        expected_md5 = hashlib.md5(content.encode()).hexdigest()
+        assert expected_md5 in result[0]["content"]
+
+    @pytest.mark.asyncio
+    async def test_TC20_10___mask_messages_content非字串(self):
+        """TC-20-10: _mask_messages - content 非字串"""
+        from core.tracer import Tracer
+        messages = [{"role": "system", "content": 123}]
+        result = Tracer._mask_messages(messages)
+        # 非字串 content 應設為 MASKED (length=0) 或跳過
+        assert "MASKED" in result[0]["content"] or result[0]["content"] == 123
+
+    @pytest.mark.asyncio
+    async def test_TC20_11___mask_messages_content為None(self):
+        """TC-20-11: _mask_messages - content 為 None"""
+        from core.tracer import Tracer
+        messages = [{"role": "system", "content": None}]
+        result = Tracer._mask_messages(messages)
+        assert result[0]["content"] == "MASKED (length=0)"
+
+    @pytest.mark.asyncio
+    async def test_TC20_12___mask_messages不修改非system_role(self):
+        """TC-20-12: _mask_messages - 不修改非 system role"""
+        from core.tracer import Tracer
+        messages = [
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": "U"},
+            {"role": "assistant", "content": "A"}
+        ]
+        result = Tracer._mask_messages(messages)
+        # user/assistant role 的 content 不變
+        assert result[1]["content"] == "U"
+        assert result[2]["content"] == "A"

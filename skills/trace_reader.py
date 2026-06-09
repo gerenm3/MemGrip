@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 # 模組層快取: {path: (mtime, results)}
 _cache: dict[str, tuple[float, list]] = {}
-_mtimes: dict[str, float] = {}
+_mtymes: dict[str, float] = {}
 
 
 def _load_jsonl(path: str) -> list:
@@ -55,7 +55,10 @@ def _clear_cache() -> None:
 
 
 def _extract_tool_calls_from_messages(messages: list) -> list:
-    """從 messages 中提取 tool_calls."""
+    """從 messages 中提取 tool_calls.
+
+    DEF-004 修正：arguments 為 None 時轉換為 "{}"。
+    """
     tool_calls_list = []
     for msg in messages:
         if msg.get("role") == "assistant" and msg.get("tool_calls"):
@@ -64,7 +67,7 @@ def _extract_tool_calls_from_messages(messages: list) -> list:
                     func = tc["function"]
                     tool_calls_list.append({
                         "name": func.get("name"),
-                        "arguments": func.get("arguments", "{}"),
+                        "arguments": func.get("arguments") or "{}",
                     })
     return tool_calls_list
 

@@ -312,7 +312,7 @@ class Orchestrator:
         )
 
         # Responder 回覆
-        reply_result = await self.responder.reply_tool(
+        reply_result = self.responder.reply_tool(
             agentic_loop_output=loop_result.data or "",
             user_input=user_input,
         )
@@ -451,7 +451,7 @@ class Orchestrator:
         for unit in execution_order:
             # 檢查上游是否失敗
             upstream_failed = False
-            for dep_id in unit.depends_on:
+            for dep_id in unit.depends_on or []:
                 dep_result = self._unit_store.get_unit(self._session_id, dep_id)
                 if dep_result and dep_result.status == UnitStatus.FAILED:
                     upstream_failed = True

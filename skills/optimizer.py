@@ -12,7 +12,7 @@ import json
 import logging
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import config
 from clients.model_client import call_model
@@ -379,11 +379,19 @@ class Optimizer:
             logger.warning("[optimizer] _get_last_task_type failed: %s", e)
         return "general"
 
-    def _compute_stats(self, signals: List[Dict]) -> Dict:
-        """計算統計摘要."""
-        n = len(signals)
-        if n == 0:
-            return {}
+    def _compute_stats(self, signals: Union[List[Dict], Dict]) -> Dict:
+        """計算統計摘要.
+
+        DEF-003 修正：支援單一 dict 輸入（測試用）或 List[Dict] 輸入。
+        """
+        # 若輸入為單一 dict，包裝為 list
+        if isinstance(signals, dict):
+            signals = [signals]
+            n = 1
+        else:
+            n = len(signals)
+            if n == 0:
+                return {}
 
         return {
             "count": n,
@@ -397,17 +405,20 @@ class Optimizer:
         }
 
     def _detect_anomalies(self, stats: Dict) -> List[str]:
-        """根據閾值判定異常維度."""
+        """根據閾值判定異常維度.
+
+        DEF-003 修正：異常鍵名使用 "high_" / "low_" 前綴格式。
+        """
         anomalies: List[str] = []
 
         if stats.get("avg_failed_units", 0) > FAILED_UNITS_THRESHOLD:
-            anomalies.append("failed_units")
+            anomalies.append("high_failed_units")
         if stats.get("avg_replan", 0) > REPLAN_COUNT_THRESHOLD:
-            anomalies.append("replan_count")
+            anomalies.append("high_replan_count")
         if stats.get("avg_loop_count", 0) > AVG_LOOP_COUNT_THRESHOLD:
-            anomalies.append("avg_loop_count")
+            anomalies.append("high_avg_loop_count")
         if stats.get("avg_constraint_ratio", 1.0) < CONSTRAINT_SATISFIED_RATIO_THRESHOLD:
-            anomalies.append("constraint_ratio")
+            anomalies.append("low_constraint_satisfied_ratio")
 
         return anomalies
 

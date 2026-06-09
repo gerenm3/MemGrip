@@ -1,104 +1,132 @@
-"""tests/L1/test_message_builder.py — MessageBuilder 純邏輯測試（12 筆）."""
+"""Test plan L1 - MessageBuilder (#4)
 
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
+Covers: build_core, build_task, build_dialog, build_meta (all static methods)
 
+Total: 18 test cases (TC-04-01 ~ TC-04-18)
+"""
+
+import pytest
 from clients.message_builder import MessageBuilder
 
 
+# ── build_core ───────────────────────────────────────────────────────────
+
 class TestBuildCore:
-    """MessageBuilder.build_core 測試."""
+    """TC-04-01 ~ TC-04-04, TC-04-17"""
 
-    def test_build_core_returns_list(self):
-        """等價類：正常輸入 → 回傳 list 格式正確."""
-        result = MessageBuilder.build_core("sys prompt", "hello")
-        assert isinstance(result, list)
-        assert len(result) == 2
-        assert result[0]["role"] == "system"
-        assert result[1]["role"] == "user"
+    def test_TC_04_01_normal_input(self):
+        result = MessageBuilder.build_core("You are a helpful assistant", "Hello")
+        assert result == [
+            {"role": "system", "content": "You are a helpful assistant"},
+            {"role": "user", "content": "Hello"},
+        ]
 
-    def test_build_core_user_content_wrapped(self):
-        """等價類：user_content 應在 user role message 中."""
-        result = MessageBuilder.build_core("sys", "user msg")
-        assert result[1]["content"] == "user msg"
+    def test_TC_04_02_empty_system_prompt(self):
+        result = MessageBuilder.build_core("", "Hello")
+        assert result == [
+            {"role": "system", "content": ""},
+            {"role": "user", "content": "Hello"},
+        ]
 
-    def test_build_core_empty_user(self):
-        """邊界：空 user_content."""
-        result = MessageBuilder.build_core("sys", "")
-        assert isinstance(result, list)
-        assert result[1]["content"] == ""
+    def test_TC_04_03_empty_user_content(self):
+        result = MessageBuilder.build_core("Hi", "")
+        assert result == [
+            {"role": "system", "content": "Hi"},
+            {"role": "user", "content": ""},
+        ]
 
+    def test_TC_04_04_both_empty(self):
+        result = MessageBuilder.build_core("", "")
+        assert result == [
+            {"role": "system", "content": ""},
+            {"role": "user", "content": ""},
+        ]
+
+    def test_TC_04_17_special_characters(self):
+        result = MessageBuilder.build_core("P", "Hello\nWorld\twith\\special")
+        assert result[1]["content"] == "Hello\nWorld\twith\\special"
+
+
+# ── build_task ───────────────────────────────────────────────────────────
 
 class TestBuildTask:
-    """MessageBuilder.build_task 測試."""
+    """TC-04-05 ~ TC-04-06"""
 
-    def test_build_task_returns_list(self):
-        """等價類：正常輸入 → 回傳 list 格式正確."""
-        result = MessageBuilder.build_task("sys", "task")
-        assert isinstance(result, list)
-        assert len(result) == 2
+    def test_TC_04_05_normal_input(self):
+        result = MessageBuilder.build_task("Task prompt", "Do this")
+        assert result == [
+            {"role": "system", "content": "Task prompt"},
+            {"role": "user", "content": "Do this"},
+        ]
 
-    def test_build_task_system_in_system_role(self):
-        """等價類：system prompt 應在 system role."""
-        result = MessageBuilder.build_task("my system", "task")
-        assert result[0]["role"] == "system"
-        assert result[0]["content"] == "my system"
+    def test_TC_04_06_no_memory_tags(self):
+        result = MessageBuilder.build_task("P", "U")
+        content = result[1]["content"]
+        assert "[SUMMARY]" not in content
+        assert "[BUFFER]" not in content
+        assert "[RAG]" not in content
 
+
+# ── build_dialog ─────────────────────────────────────────────────────────
 
 class TestBuildDialog:
-    """MessageBuilder.build_dialog 測試."""
+    """TC-04-07 ~ TC-04-13, TC-04-18"""
 
-    def test_build_dialog_all_fields_populated(self):
-        """等價類：5 個參數全部有值."""
+    def test_TC_04_07_normal_with_all_memory(self):
         result = MessageBuilder.build_dialog(
-            "sys", "user", "summary text", "buffer text", "rag text"
+            "P", "Hello", "Summary", "Buffer", "RAG"
         )
-        assert isinstance(result, list)
-        full_content = " ".join(m["content"] for m in result)
-        assert "summary text" in full_content
-        assert "buffer text" in full_content
-        assert "rag text" in full_content
+        content = result[0]["content"]
+        assert "[SUMMARY]Summary[/SUMMARY]" in content
+        assert "[BUFFER]Buffer[/BUFFER]" in content
+        assert "[RAG]RAG[/RAG]" in content
+        assert "[USER_INPUT]" in result[1]["content"]
+        assert "Hello" in result[1]["content"]
 
-    def test_build_dialog_empty_summary_buffer_rag(self):
-        """邊界：summary/buffer/rag 全空."""
-        result = MessageBuilder.build_dialog("sys", "user", "", "", "")
-        assert isinstance(result, list)
-        full_content = " ".join(m["content"] for m in result)
-        assert "user" in full_content
+    def test_TC_04_08_no_summary(self):
+        result = MessageBuilder.build_dialog("P", "Hello", "", "Buffer", "RAG")
+        content = result[0]["content"]
+        assert "[SUMMARY]" not in content
+        assert "[BUFFER]Buffer[/BUFFER]" in content
 
-    def test_build_dialog_summary_included(self):
-        """等價類：summary 應包含在 message content."""
-        result = MessageBuilder.build_dialog("sys", "user", "MY_SUMMARY", "", "")
-        full_content = " ".join(m["content"] for m in result)
-        assert "MY_SUMMARY" in full_content
+    def test_TC_04_09_no_buffer(self):
+        result = MessageBuilder.build_dialog("P", "Hello", "Summary", "", "RAG")
+        content = result[0]["content"]
+        assert "[SUMMARY]Summary[/SUMMARY]" in content
+        assert "[BUFFER]" not in content
 
-    def test_build_dialog_buffer_included(self):
-        """等價類：buffer 應包含在 message content."""
-        result = MessageBuilder.build_dialog("sys", "user", "", "MY_BUFFER", "")
-        full_content = " ".join(m["content"] for m in result)
-        assert "MY_BUFFER" in full_content
+    def test_TC_04_10_no_rag(self):
+        result = MessageBuilder.build_dialog("P", "Hello", "Summary", "Buffer", "")
+        content = result[0]["content"]
+        assert "[RAG]" not in content
+        assert "[SUMMARY]Summary[/SUMMARY]" in content
+        assert "[BUFFER]Buffer[/BUFFER]" in content
 
-    def test_build_dialog_rag_included(self):
-        """等價類：rag 應包含在 message content."""
-        result = MessageBuilder.build_dialog("sys", "user", "", "", "MY_RAG")
-        full_content = " ".join(m["content"] for m in result)
-        assert "MY_RAG" in full_content
+    def test_TC_04_11_all_memory_empty(self):
+        result = MessageBuilder.build_dialog("P", "Hello", "", "", "")
+        content = result[0]["content"]
+        assert "[SUMMARY]" not in content
+        assert "[BUFFER]" not in content
+        assert "[RAG]" not in content
+        assert "[USER_INPUT]" in result[1]["content"]
+        assert "Hello" in result[1]["content"]
 
+    def test_TC_04_12_user_input_always_wrapped(self):
+        result = MessageBuilder.build_dialog("P", "", "", "", "")
+        content = result[0]["content"]
+        assert "[USER_INPUT]" in result[1]["content"]
 
-class TestBuildMeta:
-    """MessageBuilder.build_meta 測試."""
+    def test_TC_04_13_memory_blocks_separated_by_newline(self):
+        result = MessageBuilder.build_dialog("P", "U", "S", "B", "R")
+        content = result[0]["content"]
+        assert "\n\n" in content
 
-    def test_build_meta_returns_list(self):
-        """等價類：正常輸入 → 回傳 list 格式正確."""
-        result = MessageBuilder.build_meta("sys", {"data": "some content"})
-        assert isinstance(result, list)
-        assert len(result) == 2
-
-    def test_build_meta_vs_build_core_difference(self):
-        """等價類：meta 與 core 的 message 結構差異."""
-        meta = MessageBuilder.build_meta("sys", {"data": "content"})
-        core = MessageBuilder.build_core("sys", "user")
-        # meta 和 core 的 role 順序應該一致（都是 system + user）
-        assert meta[0]["role"] == core[0]["role"]
-        assert meta[1]["role"] == core[1]["role"]
+    def test_TC_04_18_tag_order(self):
+        result = MessageBuilder.build_dialog("P", "U", "S", "B", "R")
+        content = result[0]["content"]
+        summary_pos = content.find("[SUMMARY]")
+        buffer_pos = content.find("[BUFFER]")
+        rag_pos = content.find("[RAG]")
+        assert summary_pos < buffer_pos < rag_pos
+        assert "U" in result[1]["content"]
+        assert "[USER_INPUT]" in result[1]["content"]

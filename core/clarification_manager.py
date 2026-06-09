@@ -210,6 +210,8 @@ class ClarificationManager:
             )
             self._clarification_state = ClarificationState.NORMAL
             self._pending_questions = []
+            self._pending_clarify_result = None
+            self._pending_path = None
             self._clarification_rounds = 0
             self._clarification_history = []
             self._original_user_input = ""
@@ -219,7 +221,7 @@ class ClarificationManager:
         """建構 ClarificationResult。"""
         if not self._pending_clarify_result:
             return ClarificationResult(
-                completed=False,
+                completed=completed,
                 path="pending",
                 clarify_data={},
                 domain=self._pending_domain,
@@ -228,15 +230,32 @@ class ClarificationManager:
                 rag=self._pending_rag,
                 reply=reply,
             )
+
         clarified_goal = self._pending_clarify_result.get("goal", "")
+        domain = self._pending_domain
+        path = self._pending_path or "tool"
+
+        # 無論 completed 與否，都呼叫 router.route 重新路由
         new_route = await self.router.route(clarified_goal)
         new_route_data = new_route.data if new_route.success else {}
-        path = new_route_data.get("intent", self._pending_path or "tool")
         domain = new_route_data.get("domain", self._pending_domain)
+        path = new_route_data.get("intent", path)
         if path == "simple":
             path = "tool"
+
+        if completed:
+            return ClarificationResult(
+                completed=True,
+                path="pending",
+                clarify_data=self._pending_clarify_result,
+                domain=domain,
+                buffer=self._pending_buffer,
+                summary=self._pending_summary,
+                rag=self._pending_rag,
+                reply=reply,
+            )
         return ClarificationResult(
-            completed=completed,
+            completed=False,
             path=path,
             clarify_data=self._pending_clarify_result,
             domain=domain,

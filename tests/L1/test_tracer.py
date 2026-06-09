@@ -1,169 +1,129 @@
-"""tests/L1/test_tracer — tracer 模組層級函數純邏輯測試（4 筆）."""
+"""L1 test plan for Tracer (#20).
 
-import hashlib
-import json
-import unittest.mock
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
+Test cases from docs/test_plan_l1/20_tracer.md.
+Only _mask_messages is in scope per l1_scope.md.
+"""
 import pytest
+import hashlib
 
 
-class TestMaskMessages:
-    """測試 tracer._mask_messages 模組層級函數."""
+class TestTracer:
+    """Test Tracer per test plan #20 (L1 scope only)."""
 
-    def test_mask_messages_normal(self):
-        """等價類：正常 messages 不脫敏（非 system role 保持原樣）."""
+    def _get_masked(self, messages):
+        """Call _mask_messages and return the modified messages."""
         from core.tracer import _mask_messages
+        import copy
+        return _mask_messages(copy.deepcopy(messages))
+
+    def test_TC_20_01_no_system_role(self):
+        """TC-20-01: _mask_messages - 無 system role."""
         messages = [
-            {"role": "user", "content": "hello world"},
-            {"role": "assistant", "content": "hi there"},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hi"}
         ]
-        result = _mask_messages(messages)
-        assert len(result) == 2
-        assert result[0]["role"] == "user"
-        assert result[0]["content"] == "hello world"
-        assert result[1]["role"] == "assistant"
-        assert result[1]["content"] == "hi there"
+        result = self._get_masked(messages)
+        assert result[0]["content"] == "Hello"
+        assert result[1]["content"] == "Hi"
 
-    def test_mask_messages_system_masked(self):
-        """等價類：system role 的內容被脫敏（前 100 字 + ... + MD5）."""
-        from core.tracer import _mask_messages
-        long_content = "A" * 200
+    def test_TC_20_02_system_empty_content(self):
+        """TC-20-02: _mask_messages - system role content 為空.
+        
+        測試計畫預期：空 content 脫敏為 "...{MD5}" 格式。
+        """
+        content = ""
+        messages = [{"role": "system", "content": content}]
+        result = self._get_masked(messages)
+        expected_md5 = hashlib.md5(b"").hexdigest()
+        expected = content[:100] + "..." + expected_md5
+        assert result[0]["content"] == expected
+
+    def test_TC_20_03_system_content_length_100(self):
+        """TC-20-03: _mask_messages - system role content 長度 <= 100 (正好 100)."""
+        content = "A" * 100
+        messages = [{"role": "system", "content": content}]
+        result = self._get_masked(messages)
+        expected_md5 = hashlib.md5(content.encode()).hexdigest()
+        expected = content[:100] + "..." + expected_md5
+        assert result[0]["content"] == expected
+
+    def test_TC_20_04_system_content_length_200(self):
+        """TC-20-04: _mask_messages - system role content 長度 > 100."""
+        content = "A" * 200
+        messages = [{"role": "system", "content": content}]
+        result = self._get_masked(messages)
+        expected_md5 = hashlib.md5(content.encode()).hexdigest()
+        expected = content[:100] + "..." + expected_md5
+        assert result[0]["content"] == expected
+
+    def test_TC_20_05_system_content_length_101(self):
+        """TC-20-05: _mask_messages - system role content 長度 = 101."""
+        content = "A" * 101
+        messages = [{"role": "system", "content": content}]
+        result = self._get_masked(messages)
+        expected_md5 = hashlib.md5(content.encode()).hexdigest()
+        expected = content[:100] + "..." + expected_md5
+        assert result[0]["content"] == expected
+
+    def test_TC_20_06_multiple_system_roles(self):
+        """TC-20-06: _mask_messages - 多個 system role."""
         messages = [
-            {"role": "system", "content": long_content},
+            {"role": "system", "content": "S1"},
+            {"role": "user", "content": "U"},
+            {"role": "system", "content": "S2"}
         ]
-        result = _mask_messages(messages)
-        masked = result[0]["content"]
-        md5_hash = hashlib.md5(long_content.encode("utf-8", errors="ignore")).hexdigest()
-        # 源碼: content[:100] + "..." + md5 → 總長 = 100 + 3 + 32 = 135
-        assert len(masked) == 100 + 3 + len(md5_hash)
-        assert long_content[:100] in masked
-        assert md5_hash in masked
+        result = self._get_masked(messages)
+        # Both system roles should be masked (content changed)
+        assert result[0]["content"] != "S1"
+        assert result[2]["content"] != "S2"
+        assert "..." in result[0]["content"]
+        assert "..." in result[2]["content"]
+        # user not modified
+        assert result[1]["content"] == "U"
 
-    def test_mask_messages_empty_list(self):
-        """邊界：空 list → []."""
-        from core.tracer import _mask_messages
-        result = _mask_messages([])
+    def test_TC_20_07_empty_messages(self):
+        """TC-20-07: _mask_messages - messages 為空."""
+        result = self._get_masked([])
         assert result == []
 
-    def test_mask_messages_none_content(self):
-        """邊界：content 為 None → 不拋異常，使用空字串."""
-        from core.tracer import _mask_messages
+    def test_TC_20_08_none_messages(self):
+        """TC-20-08: _mask_messages - messages 為 None (拋 TypeError)."""
+        with pytest.raises(TypeError):
+            self._get_masked(None)
+
+    def test_TC_20_09_md5_correctness(self):
+        """TC-20-09: _mask_messages - MD5 正確性."""
+        content = "test system prompt"
+        messages = [{"role": "system", "content": content}]
+        result = self._get_masked(messages)
+        expected_md5 = hashlib.md5(content.encode()).hexdigest()
+        assert expected_md5 in result[0]["content"]
+        assert "..." in result[0]["content"]
+
+    def test_TC_20_10_non_string_content(self):
+        """TC-20-10: _mask_messages - content 非字串 (拋 TypeError)."""
+        messages = [{"role": "system", "content": 123}]
+        with pytest.raises(TypeError):
+            self._get_masked(messages)
+
+    def test_TC_20_11_none_content(self):
+        """TC-20-11: _mask_messages - content 為 None.
+        
+        測試計畫預期：None content 經 or "" 轉為空字串，脫敏為 "...{MD5}"。
+        """
+        messages = [{"role": "system", "content": None}]
+        result = self._get_masked(messages)
+        expected_md5 = hashlib.md5(b"").hexdigest()
+        expected = ""[:100] + "..." + expected_md5
+        assert result[0]["content"] == expected
+
+    def test_TC_20_12_non_system_roles_unchanged(self):
+        """TC-20-12: _mask_messages - 不修改非 system role."""
         messages = [
-            {"role": "system", "content": None},
-            {"role": "user", "content": "test"},
+            {"role": "system", "content": "S"},
+            {"role": "user", "content": "U"},
+            {"role": "assistant", "content": "A"}
         ]
-        result = _mask_messages(messages)
-        assert len(result) == 2
-        # content=None → content="" → 脫敏為 ".."+md5("")
-        assert ".." in result[0]["content"]
-        assert result[1]["content"] == "test"
-
-
-class TestNewSession:
-    """測試 new_session 函數."""
-
-    def test_new_session_returns_uuid_format(self):
-        """等價類：new_session 回傳 UUID 格式字串."""
-        from core.tracer import new_session
-        result = new_session()
-        assert isinstance(result, str)
-        assert len(result) == 36  # UUID format
-        parts = result.split("-")
-        assert len(parts) == 5  # UUID has 5 parts
-
-    def test_new_session_sets_context_var(self):
-        """等價類：new_session 設定 _session_id_var."""
-        from core.tracer import new_session, _session_id_var
-        session_id = new_session()
-        assert _session_id_var.get() == session_id
-
-
-class TestLogModelCall:
-    """測試 log_model_call 函數."""
-
-    def test_log_model_call_creates_file(self, tmp_path):
-        """等價類：log_model_call 寫入 trace 檔案."""
-        from core.tracer import new_session, log_model_call
-
-        session_id = new_session()
-        trace_dir = tmp_path / "traces"
-        trace_path = trace_dir / f"{session_id}.jsonl"
-
-        with patch("core.tracer.config.LOGS_DIR", str(tmp_path)), \
-             patch("core.tracer.time.time", return_value=1234567890.0):
-            log_model_call(
-                caller="test_caller",
-                model="test_model",
-                messages=[{"role": "user", "content": "hello"}],
-                response="goodbye",
-                tool_calls=[],
-            )
-
-        assert trace_path.exists()
-        content = trace_path.read_text()
-        assert "test_caller" in content
-        assert "test_model" in content
-        assert "hello" in content
-        assert "goodbye" in content
-
-    def test_log_model_call_handles_write_error(self, tmp_path):
-        """邊界：寫入失敗 → 不拋異常，記錄 logger.error."""
-        from core.tracer import new_session, log_model_call
-
-        session_id = new_session()
-        # 指向不存在的目錄
-        with patch("core.tracer.config.LOGS_DIR", "/nonexistent/path"), \
-             patch("core.tracer.logger") as mock_logger:
-            # 不拋異常
-            log_model_call(
-                caller="test_caller",
-                model="test_model",
-                messages=[{"role": "user", "content": "hello"}],
-                response="goodbye",
-                tool_calls=[],
-            )
-            # 確認 logger.error 被呼叫
-            assert mock_logger.error.called
-
-
-class TestLogTask:
-    """測試 log_task 函數."""
-
-    def test_log_task_writes_task_trace(self, tmp_path):
-        """等價類：log_task 寫入 task_trace.jsonl."""
-        from core.tracer import new_session, log_task
-
-        session_id = new_session()
-        task_trace_path = tmp_path / "task_trace.jsonl"
-
-        # 使用 MagicMock（log_task 用 unit.unit_id 存取屬性）
-        mock_unit = MagicMock()
-        mock_unit.unit_id = "u1"
-        mock_unit.goal = "test goal"
-        mock_unit.output_type = "ACTION"
-        mock_unit.assigned_constraints = []
-
-        import uuid as uuid_mod
-
-        with patch("core.tracer.config.TASK_TRACE_PATH", str(task_trace_path)), \
-             patch("core.tracer.datetime") as mock_dt, \
-             patch("core.tracer.uuid.uuid4", return_value=uuid_mod.UUID("12345678-90ab-cdef-1234-567890abcdef")):
-            mock_dt.now.return_value.isoformat.return_value = "2024-01-01T00:00:00+08:00"
-            mock_dt.timezone = __import__("datetime").timezone
-            mock_dt.timedelta = __import__("datetime").timedelta
-
-            log_task(
-                task_type="software_dev",
-                user_input="test input",
-                goal="test goal",
-                results={},
-                units=[mock_unit],
-            )
-
-        assert task_trace_path.exists()
-        content = task_trace_path.read_text()
-        assert "software_dev" in content
-        assert "test input" in content
-        assert "test goal" in content
+        result = self._get_masked(messages)
+        assert result[1]["content"] == "U"
+        assert result[2]["content"] == "A"

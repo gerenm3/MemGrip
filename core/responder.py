@@ -155,6 +155,10 @@ class Responder:
                 return Result(success=False, error="任務執行時發生錯誤。")
             return Result(success=True, data="任務已執行完成。")
 
+        # 邊界條件：所有 unit 都失敗
+        if failed_results and len(failed_results) == len(units):
+            return Result(success=True, data="任務執行時發生錯誤。")
+
         task_desc = original_task.get("goal", "") if isinstance(original_task, dict) else str(original_task)
 
         try:
